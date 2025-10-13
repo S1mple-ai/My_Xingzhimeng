@@ -5,6 +5,8 @@ from database import DatabaseManager
 from streamlit_option_menu import option_menu
 import plotly.express as px
 import plotly.graph_objects as go
+from upload_components import drag_drop_image_uploader, drag_drop_media_uploader, display_uploaded_media
+from category_management import render_category_management
 
 # 页面配置
 st.set_page_config(
@@ -270,6 +272,10 @@ elif selected == "🧵 面料管理":
             # 显示面料列表
             for _, fabric in df_fabrics.iterrows():
                 with st.expander(f"🧵 {fabric['name']} - {fabric['material_type']} ({fabric['usage_type']})"):
+                    # 显示现有图片
+                    if fabric.get('image_path'):
+                        display_uploaded_media(image_path=fabric['image_path'])
+                    
                     col1, col2, col3 = st.columns([2, 2, 1])
                     
                     with col1:
@@ -282,10 +288,20 @@ elif selected == "🧵 面料管理":
                         new_usage = st.selectbox("用途", ["表布", "里布"], 
                                                 index=["表布", "里布"].index(fabric['usage_type']),
                                                 key=f"fabric_usage_{fabric['id']}")
+                        
+                        # 图片更新
+                        st.markdown("**更新图片:**")
+                        uploaded_file, new_image_path = drag_drop_image_uploader(
+                            key=f"fabric_update_image_{fabric['id']}", 
+                            label="", 
+                            help_text="上传新图片以替换现有图片"
+                        )
                     
                     with col3:
                         if st.button("💾 更新", key=f"update_fabric_{fabric['id']}"):
-                            db.update_fabric(fabric['id'], new_name, new_material, new_usage)
+                            # 如果有新图片，使用新图片路径，否则保持原有路径
+                            final_image_path = new_image_path if new_image_path else fabric.get('image_path')
+                            db.update_fabric(fabric['id'], new_name, new_material, new_usage, final_image_path)
                             st.success("✅ 面料信息已更新")
                             st.rerun()
                         
@@ -299,6 +315,7 @@ elif selected == "🧵 面料管理":
     with tab2:
         st.markdown("### ➕ 添加新面料")
         
+        # 基本信息表单
         with st.form("add_fabric_form"):
             col1, col2 = st.columns(2)
             
@@ -309,11 +326,19 @@ elif selected == "🧵 面料管理":
             with col2:
                 usage_type = st.selectbox("🎯 用途*", ["表布", "里布"])
             
+            # 图片上传区域
+            st.markdown("---")
+            uploaded_file, image_path = drag_drop_image_uploader(
+                key="fabric_image", 
+                label="📷 面料图片", 
+                help_text="支持拖拽上传 PNG, JPG, JPEG, GIF 等格式的图片"
+            )
+            
             submitted = st.form_submit_button("➕ 添加面料", use_container_width=True)
             
             if submitted:
                 if name:
-                    fabric_id = db.add_fabric(name, material_type, usage_type)
+                    fabric_id = db.add_fabric(name, material_type, usage_type, image_path)
                     st.markdown(f'<div class="success-message">✅ 面料 "{name}" 添加成功！</div>', unsafe_allow_html=True)
                     st.rerun()
                 else:
@@ -332,6 +357,13 @@ elif selected == "👜 包型管理":
         if bag_types:
             for bag_type in bag_types:
                 with st.expander(f"👜 {bag_type['name']} - ¥{bag_type['price']:.2f}"):
+                    # 显示媒体文件
+                    if bag_type['image_path'] or bag_type['video_path']:
+                        display_uploaded_media(
+                            image_path=bag_type['image_path'], 
+                            video_path=bag_type['video_path']
+                        )
+                    
                     col1, col2 = st.columns(2)
                     
                     with col1:
@@ -348,46 +380,7 @@ elif selected == "👜 包型管理":
             st.info("📝 暂无包型数据，请先创建分类并添加包型")
     
     with tab2:
-        st.markdown("### 🗂️ 分类管理")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("#### ➕ 添加分类")
-            with st.form("add_category_form"):
-                category_name = st.text_input("分类名称*", placeholder="例如：手提包")
-                
-                # 获取现有分类作为父分类选项
-                categories = db.get_bag_categories()
-                parent_options = ["无（顶级分类）"] + [cat['name'] for cat in categories]
-                parent_choice = st.selectbox("父分类", parent_options)
-                
-                submitted = st.form_submit_button("➕ 添加分类")
-                
-                if submitted and category_name:
-                    parent_id = None
-                    if parent_choice != "无（顶级分类）":
-                        parent_id = next((cat['id'] for cat in categories if cat['name'] == parent_choice), None)
-                    
-                    category_id = db.add_bag_category(category_name, parent_id)
-                    st.success(f"✅ 分类 \"{category_name}\" 添加成功！")
-                    st.rerun()
-        
-        with col2:
-            st.markdown("#### 📂 现有分类")
-            categories = db.get_bag_categories()
-            
-            if categories:
-                for category in categories:
-                    level_indicator = "└─ " * (category['level'] - 1)
-                    st.write(f"{level_indicator}📁 {category['name']} (Level {category['level']})")
-                    
-                    # 显示子分类
-                    subcategories = db.get_bag_categories(category['id'])
-                    for subcat in subcategories:
-                        st.write(f"  └─ 📂 {subcat['name']}")
-            else:
-                st.info("暂无分类，请添加分类")
+        render_category_management(db)
     
     with tab3:
         st.markdown("### ➕ 添加新包型")
@@ -420,9 +413,14 @@ elif selected == "👜 包型管理":
                     else:
                         subcategory_choice = "无"
                         st.info("该分类下暂无子分类")
-                    
-                    image_path = st.text_input("🖼️ 图片路径", placeholder="可选")
-                    video_path = st.text_input("🎥 视频路径", placeholder="可选")
+                
+                # 媒体文件上传区域
+                st.markdown("---")
+                media_uploads = drag_drop_media_uploader(
+                    key="bag_type_media", 
+                    label="📁 包型媒体文件", 
+                    help_text="支持拖拽上传图片和视频文件"
+                )
                 
                 submitted = st.form_submit_button("➕ 添加包型", use_container_width=True)
                 
@@ -431,6 +429,10 @@ elif selected == "👜 包型管理":
                         subcategory_id = None
                         if subcategory_choice != "无":
                             subcategory_id = next((subcat['id'] for subcat in subcategories if subcat['name'] == subcategory_choice), None)
+                        
+                        # 获取上传的文件路径
+                        image_path = media_uploads["image"][1]  # 获取图片路径
+                        video_path = media_uploads["video"][1]  # 获取视频路径
                         
                         bag_type_id = db.add_bag_type(name, selected_category['id'], subcategory_id, price, image_path, video_path)
                         st.markdown(f'<div class="success-message">✅ 包型 "{name}" 添加成功！</div>', unsafe_allow_html=True)
@@ -475,16 +477,25 @@ elif selected == "📦 库存管理":
                     
                     with col3:
                         if st.button("💾 更新", key=f"update_item_{item['id']}"):
-                            # 这里需要添加更新商品信息的数据库方法
-                            if quantity_change != 0:
-                                db.update_inventory_quantity(item['id'], quantity_change)
-                            st.success("✅ 商品信息已更新")
-                            st.rerun()
+                            # 更新商品完整信息
+                            new_quantity = item['quantity'] + quantity_change
+                            success = db.update_inventory_item(
+                                item['id'], new_name, new_description, 
+                                new_price, new_quantity, new_image
+                            )
+                            if success:
+                                st.success("✅ 商品信息已更新")
+                                st.rerun()
+                            else:
+                                st.error("❌ 更新失败")
                         
                         if st.button("🗑️ 删除", key=f"delete_item_{item['id']}", type="secondary"):
-                            # 这里需要添加删除商品的数据库方法
-                            st.success("✅ 商品已删除")
-                            st.rerun()
+                            success = db.delete_inventory_item(item['id'])
+                            if success:
+                                st.success("✅ 商品已删除")
+                                st.rerun()
+                            else:
+                                st.error("❌ 删除失败，该商品可能已被订单使用")
         else:
             st.info("📝 暂无库存数据，请添加商品")
     
@@ -539,11 +550,78 @@ elif selected == "📋 订单管理":
                     with col2:
                         st.write(f"**备注:** {order['notes'] or '无'}")
                         
-                        if order['status'] != 'completed':
-                            if st.button("💳 完成支付", key=f"complete_{order['id']}"):
-                                db.complete_order_payment(order['id'])
-                                st.success("✅ 订单支付完成，客户积分已更新")
+                        # 显示订单图片
+                        if order.get('image_path'):
+                            st.markdown("**订单图片:**")
+                            display_uploaded_media(order['image_path'])
+                        
+                        # 操作按钮
+                        col_btn1, col_btn2, col_btn3 = st.columns(3)
+                        
+                        with col_btn1:
+                            if order['status'] != 'completed':
+                                if st.button("💳 完成支付", key=f"complete_{order['id']}"):
+                                    db.complete_order_payment(order['id'])
+                                    st.success("✅ 订单支付完成，客户积分已更新")
+                                    st.rerun()
+                        
+                        with col_btn2:
+                            if st.button("✏️ 编辑", key=f"edit_{order['id']}"):
+                                st.session_state[f"edit_order_{order['id']}"] = True
                                 st.rerun()
+                        
+                        with col_btn3:
+                            if order['status'] != 'completed':
+                                if st.button("🗑️ 删除", key=f"delete_{order['id']}", type="secondary"):
+                                    success = db.delete_order(order['id'])
+                                    if success:
+                                        st.success("✅ 订单已删除")
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ 删除失败，已完成的订单不能删除")
+                    
+                    # 编辑订单表单
+                    if st.session_state.get(f"edit_order_{order['id']}", False):
+                        st.markdown("---")
+                        st.markdown("**编辑订单信息:**")
+                        
+                        with st.form(f"edit_order_form_{order['id']}"):
+                            edit_col1, edit_col2 = st.columns(2)
+                            
+                            with edit_col1:
+                                # 客户选择
+                                customers = db.get_customers()
+                                customer_options = [f"{c['nickname']} ({c['phone_suffix']})" for c in customers]
+                                current_customer_index = next((i for i, c in enumerate(customers) if c['id'] == order['customer_id']), 0)
+                                selected_customer_index = st.selectbox("选择客户", range(len(customer_options)), 
+                                                                     format_func=lambda x: customer_options[x],
+                                                                     index=current_customer_index)
+                                
+                                new_notes = st.text_area("订单备注", value=order['notes'] or "")
+                            
+                            with edit_col2:
+                                new_status = st.selectbox("订单状态", ["pending", "completed"], 
+                                                        index=0 if order['status'] == 'pending' else 1)
+                                new_image_path = st.text_input("图片路径", value=order['image_path'] or "")
+                            
+                            col_save, col_cancel = st.columns(2)
+                            
+                            with col_save:
+                                if st.form_submit_button("💾 保存修改", use_container_width=True):
+                                    selected_customer = customers[selected_customer_index]
+                                    success = db.update_order(order['id'], selected_customer['id'], 
+                                                            new_notes, new_image_path, new_status)
+                                    if success:
+                                        st.success("✅ 订单信息已更新")
+                                        st.session_state[f"edit_order_{order['id']}"] = False
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ 更新失败")
+                            
+                            with col_cancel:
+                                if st.form_submit_button("❌ 取消", use_container_width=True):
+                                    st.session_state[f"edit_order_{order['id']}"] = False
+                                    st.rerun()
                     
                     # 显示订单商品详情
                     st.markdown("**订单商品:**")
@@ -711,15 +789,19 @@ elif selected == "📋 订单管理":
                 
                 st.markdown(f"**订单总金额: ¥{total_amount:.2f}**")
                 
-                # 步骤3：订单备注和提交
-                st.markdown("#### 步骤3: 订单备注")
+                # 步骤3：订单备注和图片上传
+                st.markdown("#### 步骤3: 订单备注和图片")
                 order_notes = st.text_area("订单备注", placeholder="特殊要求、交货时间等")
+                
+                # 图片上传区域
+                st.markdown("##### 📸 订单图片上传")
+                order_image_path = drag_drop_image_uploader("order_image", "订单相关图片（可选）")
                 
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button("📋 创建订单", use_container_width=True):
                         # 创建订单
-                        order_id = db.create_order(customer_id, order_notes)
+                        order_id = db.create_order(customer_id, order_notes, order_image_path)
                         
                         # 添加订单商品
                         for item in st.session_state.order_items:
