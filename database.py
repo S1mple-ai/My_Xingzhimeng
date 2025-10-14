@@ -1,7 +1,12 @@
 import sqlite3
 import os
+import logging
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     def __init__(self, db_path: str = "business_management.db"):
@@ -10,7 +15,13 @@ class DatabaseManager:
     
     def get_connection(self):
         """获取数据库连接"""
-        return sqlite3.connect(self.db_path)
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row  # 使结果可以通过列名访问
+            return conn
+        except sqlite3.Error as e:
+            logger.error(f"数据库连接失败: {e}")
+            raise Exception(f"数据库连接失败: {e}")
     
     def init_database(self):
         """初始化数据库表"""
@@ -201,6 +212,45 @@ class DatabaseManager:
         conn.close()
         return success
     
+    def delete_orders_batch(self, order_ids: List[int]) -> Tuple[int, List[int]]:
+        """批量删除订单
+        
+        Returns:
+            Tuple[int, List[int]]: (成功删除的数量, 无法删除的订单ID列表)
+        """
+        if not order_ids:
+            return 0, []
+        
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        success_count = 0
+        failed_ids = []
+        
+        for order_id in order_ids:
+            # 检查订单状态
+            cursor.execute("SELECT status FROM orders WHERE id=?", (order_id,))
+            order_status = cursor.fetchone()
+            
+            if order_status and order_status[0] == 'completed':
+                failed_ids.append(order_id)
+                continue
+            
+            # 删除订单商品
+            cursor.execute("DELETE FROM order_items WHERE order_id=?", (order_id,))
+            
+            # 删除订单
+            cursor.execute("DELETE FROM orders WHERE id=?", (order_id,))
+            
+            if cursor.rowcount > 0:
+                success_count += 1
+            else:
+                failed_ids.append(order_id)
+        
+        conn.commit()
+        conn.close()
+        return success_count, failed_ids
+    
     def update_order_item(self, item_id: int, quantity: int, unit_price: float, notes: str = "") -> bool:
         """更新订单商品"""
         conn = self.get_connection()
@@ -227,16 +277,23 @@ class DatabaseManager:
     # 客户管理方法
     def add_customer(self, nickname: str, phone_suffix: str = "", notes: str = "") -> int:
         """添加客户"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO customers (nickname, phone_suffix, notes) VALUES (?, ?, ?)",
-            (nickname, phone_suffix, notes)
-        )
-        customer_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        return customer_id
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO customers (nickname, phone_suffix, notes) VALUES (?, ?, ?)",
+                (nickname, phone_suffix, notes)
+            )
+            customer_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+            logger.info(f"Successfully added customer: {nickname}")
+            return customer_id
+        except sqlite3.Error as e:
+            logger.error(f"Error adding customer {nickname}: {e}")
+            if 'conn' in locals():
+                conn.close()
+            raise Exception(f"添加客户失败: {str(e)}")
     
     def get_customers(self) -> List[Dict]:
         """获取所有客户"""
@@ -254,22 +311,50 @@ class DatabaseManager:
     
     def update_customer(self, customer_id: int, nickname: str, phone_suffix: str, notes: str):
         """更新客户信息"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE customers SET nickname=?, phone_suffix=?, notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (nickname, phone_suffix, notes, customer_id)
-        )
-        conn.commit()
-        conn.close()
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE customers SET nickname=?, phone_suffix=?, notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (nickname, phone_suffix, notes, customer_id)
+            )
+            if cursor.rowcount == 0:
+                raise Exception(f"客户ID {customer_id} 不存在")
+            conn.commit()
+            conn.close()
+            logger.info(f"Successfully updated customer ID: {customer_id}")
+        except sqlite3.Error as e:
+            logger.error(f"Error updating customer {customer_id}: {e}")
+            if 'conn' in locals():
+                conn.close()
+            raise Exception(f"更新客户信息失败: {str(e)}")
     
     def delete_customer(self, customer_id: int):
         """删除客户"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM customers WHERE id=?", (customer_id,))
-        conn.commit()
-        conn.close()
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # 检查客户是否存在
+            cursor.execute("SELECT id FROM customers WHERE id=?", (customer_id,))
+            if not cursor.fetchone():
+                raise Exception(f"客户ID {customer_id} 不存在")
+            
+            # 检查是否有关联订单
+            cursor.execute("SELECT COUNT(*) FROM orders WHERE customer_id=?", (customer_id,))
+            order_count = cursor.fetchone()[0]
+            if order_count > 0:
+                raise Exception(f"无法删除客户，该客户有 {order_count} 个关联订单")
+            
+            cursor.execute("DELETE FROM customers WHERE id=?", (customer_id,))
+            conn.commit()
+            conn.close()
+            logger.info(f"Successfully deleted customer ID: {customer_id}")
+        except sqlite3.Error as e:
+            logger.error(f"Error deleting customer {customer_id}: {e}")
+            if 'conn' in locals():
+                conn.close()
+            raise Exception(f"删除客户失败: {str(e)}")
     
     def update_customer_points(self, customer_id: int, points_to_add: int):
         """更新客户积分"""
@@ -285,16 +370,29 @@ class DatabaseManager:
     # 面料管理方法
     def add_fabric(self, name: str, material_type: str, usage_type: str, image_path: str = None) -> int:
         """添加面料"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO fabrics (name, material_type, usage_type, image_path) VALUES (?, ?, ?, ?)",
-            (name, material_type, usage_type, image_path)
-        )
-        fabric_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        return fabric_id
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # 检查是否已存在同名面料
+            cursor.execute("SELECT id FROM fabrics WHERE name=?", (name,))
+            if cursor.fetchone():
+                raise Exception(f"面料名称 '{name}' 已存在")
+            
+            cursor.execute(
+                "INSERT INTO fabrics (name, material_type, usage_type, image_path) VALUES (?, ?, ?, ?)",
+                (name, material_type, usage_type, image_path)
+            )
+            fabric_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+            logger.info(f"Successfully added fabric: {name}")
+            return fabric_id
+        except sqlite3.Error as e:
+            logger.error(f"Error adding fabric {name}: {e}")
+            if 'conn' in locals():
+                conn.close()
+            raise Exception(f"添加面料失败: {str(e)}")
     
     def get_fabrics(self, usage_type: str = None) -> List[Dict]:
         """获取面料列表"""
@@ -316,22 +414,62 @@ class DatabaseManager:
     
     def update_fabric(self, fabric_id: int, name: str, material_type: str, usage_type: str, image_path: str = None):
         """更新面料"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE fabrics SET name=?, material_type=?, usage_type=?, image_path=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (name, material_type, usage_type, image_path, fabric_id)
-        )
-        conn.commit()
-        conn.close()
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # 检查面料是否存在
+            cursor.execute("SELECT id FROM fabrics WHERE id=?", (fabric_id,))
+            if not cursor.fetchone():
+                raise Exception(f"面料ID {fabric_id} 不存在")
+            
+            # 检查是否有其他面料使用相同名称
+            cursor.execute("SELECT id FROM fabrics WHERE name=? AND id!=?", (name, fabric_id))
+            if cursor.fetchone():
+                raise Exception(f"面料名称 '{name}' 已被其他面料使用")
+            
+            cursor.execute(
+                "UPDATE fabrics SET name=?, material_type=?, usage_type=?, image_path=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (name, material_type, usage_type, image_path, fabric_id)
+            )
+            conn.commit()
+            conn.close()
+            logger.info(f"Successfully updated fabric ID: {fabric_id}")
+        except sqlite3.Error as e:
+            logger.error(f"Error updating fabric {fabric_id}: {e}")
+            if 'conn' in locals():
+                conn.close()
+            raise Exception(f"更新面料失败: {str(e)}")
     
     def delete_fabric(self, fabric_id: int):
         """删除面料"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM fabrics WHERE id=?", (fabric_id,))
-        conn.commit()
-        conn.close()
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # 检查面料是否存在
+            cursor.execute("SELECT id FROM fabrics WHERE id=?", (fabric_id,))
+            if not cursor.fetchone():
+                raise Exception(f"面料ID {fabric_id} 不存在")
+            
+            # 检查是否有关联的订单项记录（作为外布或内布）
+            cursor.execute("""
+                SELECT COUNT(*) FROM order_items 
+                WHERE outer_fabric_id=? OR inner_fabric_id=?
+            """, (fabric_id, fabric_id))
+            order_items_count = cursor.fetchone()[0]
+            if order_items_count > 0:
+                raise Exception(f"无法删除面料，该面料有 {order_items_count} 个关联订单记录")
+            
+            cursor.execute("DELETE FROM fabrics WHERE id=?", (fabric_id,))
+            conn.commit()
+            conn.close()
+            logger.info(f"Successfully deleted fabric ID: {fabric_id}")
+        except sqlite3.Error as e:
+            logger.error(f"Error deleting fabric {fabric_id}: {e}")
+            if 'conn' in locals():
+                conn.close()
+            raise Exception(f"删除面料失败: {str(e)}")
     
     # 包型分类管理
     def add_bag_category(self, name: str, parent_id: int = None) -> int:
@@ -470,6 +608,70 @@ class DatabaseManager:
             })
         conn.close()
         return bag_types
+    
+    def get_bag_type_by_id(self, bag_type_id: int) -> Optional[Dict]:
+        """根据ID获取包型信息"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT bt.*, bc1.name as category_name, bc2.name as subcategory_name
+            FROM bag_types bt
+            LEFT JOIN bag_categories bc1 ON bt.category_id = bc1.id
+            LEFT JOIN bag_categories bc2 ON bt.subcategory_id = bc2.id
+            WHERE bt.id = ?
+        """, (bag_type_id,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return {
+                'id': row[0], 'name': row[1], 'category_id': row[2], 'subcategory_id': row[3],
+                'price': row[4], 'image_path': row[5], 'video_path': row[6],
+                'created_at': row[7], 'updated_at': row[8],
+                'category_name': row[9], 'subcategory_name': row[10]
+            }
+        return None
+    
+    def update_bag_type(self, bag_type_id: int, name: str, category_id: int, 
+                       subcategory_id: int = None, price: float = 0, 
+                       image_path: str = "", video_path: str = "") -> bool:
+        """更新包型信息"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE bag_types 
+            SET name=?, category_id=?, subcategory_id=?, price=?, 
+                image_path=?, video_path=?, updated_at=CURRENT_TIMESTAMP 
+            WHERE id=?
+        """, (name, category_id, subcategory_id, price, image_path, video_path, bag_type_id))
+        
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return success
+    
+    def delete_bag_type(self, bag_type_id: int) -> bool:
+        """删除包型（检查是否有关联的订单项）"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # 检查是否有订单项使用此包型
+        cursor.execute("""
+            SELECT COUNT(*) FROM order_items 
+            WHERE item_type = '定制' AND bag_type_id = ?
+        """, (bag_type_id,))
+        order_count = cursor.fetchone()[0]
+        
+        if order_count > 0:
+            conn.close()
+            return False  # 有订单使用，不能删除
+        
+        cursor.execute("DELETE FROM bag_types WHERE id=?", (bag_type_id,))
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return success
     
     # 库存管理
     def add_inventory_item(self, product_name: str, description: str = "", 
@@ -636,6 +838,142 @@ class DatabaseManager:
             })
         conn.close()
         return orders
+    
+    def get_orders_paginated(self, page: int = 1, page_size: int = 10, search_term: str = "", status_filter: str = "") -> Tuple[List[Dict], int]:
+        """获取分页订单列表"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # 构建WHERE条件
+        where_conditions = []
+        params = []
+        
+        if search_term:
+            where_conditions.append("(c.nickname LIKE ? OR o.notes LIKE ? OR CAST(o.id AS TEXT) LIKE ?)")
+            search_pattern = f"%{search_term}%"
+            params.extend([search_pattern, search_pattern, search_pattern])
+        
+        if status_filter:
+            where_conditions.append("o.status = ?")
+            params.append(status_filter)
+        
+        where_clause = " AND ".join(where_conditions)
+        if where_clause:
+            where_clause = "WHERE " + where_clause
+        
+        # 获取总数
+        count_query = f"""
+            SELECT COUNT(*)
+            FROM orders o
+            LEFT JOIN customers c ON o.customer_id = c.id
+            {where_clause}
+        """
+        cursor.execute(count_query, params)
+        total_count = cursor.fetchone()[0]
+        
+        # 获取分页数据
+        offset = (page - 1) * page_size
+        data_query = f"""
+            SELECT o.*, c.nickname as customer_name
+            FROM orders o
+            LEFT JOIN customers c ON o.customer_id = c.id
+            {where_clause}
+            ORDER BY o.created_at DESC
+            LIMIT ? OFFSET ?
+        """
+        cursor.execute(data_query, params + [page_size, offset])
+        
+        orders = []
+        for row in cursor.fetchall():
+            orders.append({
+                'id': row[0], 'customer_id': row[1], 'total_amount': row[2],
+                'status': row[3], 'notes': row[4], 'image_path': row[5], 'created_at': row[6], 'updated_at': row[7],
+                'customer_name': row[8]
+            })
+        
+        conn.close()
+        return orders, total_count
+    
+    def get_orders_by_ids(self, order_ids: List[int]) -> List[Dict]:
+        """根据ID列表获取订单"""
+        if not order_ids:
+            return []
+        
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        placeholders = ','.join(['?' for _ in order_ids])
+        cursor.execute(f"""
+            SELECT o.*, c.nickname as customer_name
+            FROM orders o
+            LEFT JOIN customers c ON o.customer_id = c.id
+            WHERE o.id IN ({placeholders})
+            ORDER BY o.created_at DESC
+        """, order_ids)
+        
+        orders = []
+        for row in cursor.fetchall():
+            orders.append({
+                'id': row[0], 'customer_id': row[1], 'total_amount': row[2],
+                'status': row[3], 'notes': row[4], 'image_path': row[5], 'created_at': row[6], 'updated_at': row[7],
+                'customer_name': row[8]
+            })
+        
+        conn.close()
+        return orders
+    
+    def get_orders_with_items_for_export(self, order_ids: List[int]) -> Dict[int, Dict]:
+        """获取订单及其商品信息用于CSV导出（优化版本）"""
+        if not order_ids:
+            return {}
+        
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # 获取订单基本信息
+        placeholders = ','.join(['?' for _ in order_ids])
+        cursor.execute(f"""
+            SELECT o.*, c.nickname as customer_name
+            FROM orders o
+            LEFT JOIN customers c ON o.customer_id = c.id
+            WHERE o.id IN ({placeholders})
+        """, order_ids)
+        
+        orders_dict = {}
+        for row in cursor.fetchall():
+            orders_dict[row[0]] = {
+                'id': row[0], 'customer_id': row[1], 'total_amount': row[2],
+                'status': row[3], 'notes': row[4], 'image_path': row[5], 
+                'created_at': row[6], 'updated_at': row[7], 'customer_name': row[8],
+                'items': []
+            }
+        
+        # 获取所有订单的商品信息
+        cursor.execute(f"""
+            SELECT oi.*, i.product_name as inventory_name, bt.name as bag_type_name,
+                   f1.name as outer_fabric_name, f2.name as inner_fabric_name
+            FROM order_items oi
+            LEFT JOIN inventory i ON oi.inventory_id = i.id
+            LEFT JOIN bag_types bt ON oi.bag_type_id = bt.id
+            LEFT JOIN fabrics f1 ON oi.outer_fabric_id = f1.id
+            LEFT JOIN fabrics f2 ON oi.inner_fabric_id = f2.id
+            WHERE oi.order_id IN ({placeholders})
+            ORDER BY oi.order_id, oi.id
+        """, order_ids)
+        
+        for row in cursor.fetchall():
+            order_id = row[1]  # order_id is the second column
+            if order_id in orders_dict:
+                orders_dict[order_id]['items'].append({
+                    'id': row[0], 'order_id': row[1], 'item_type': row[2],
+                    'inventory_id': row[3], 'bag_type_id': row[4], 'outer_fabric_id': row[5],
+                    'inner_fabric_id': row[6], 'quantity': row[7], 'unit_price': row[8],
+                    'notes': row[9], 'inventory_name': row[10], 'bag_type_name': row[11],
+                    'outer_fabric_name': row[12], 'inner_fabric_name': row[13]
+                })
+        
+        conn.close()
+        return orders_dict
     
     def get_order_items(self, order_id: int) -> List[Dict]:
         """获取订单商品详情"""
