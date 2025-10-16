@@ -12,10 +12,11 @@ from ui_components import (
     show_error_message, show_warning_message, create_metric_card,
     create_action_button, create_confirmation_dialog
 )
+from auto_backup import check_and_perform_backup
 
 # 页面配置
 st.set_page_config(
-    page_title="生意管理系统",
+    page_title="星之梦手作管理系统",
     page_icon="🏪",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -27,6 +28,12 @@ def init_database():
     return DatabaseManager()
 
 db = init_database()
+
+# 执行自动备份检查（仅在应用启动时执行一次）
+if 'backup_checked' not in st.session_state:
+    st.session_state.backup_checked = True
+    with st.spinner("正在检查备份状态..."):
+        check_and_perform_backup(db)
 
 # 自定义CSS样式
 st.markdown("""
@@ -219,15 +226,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 主标题
-st.markdown('<div class="main-header">🏪 生意管理系统</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🏪 星之梦手作管理系统</div>', unsafe_allow_html=True)
 
 # 侧边栏导航
 with st.sidebar:
     st.markdown("### 📋 系统导航")
     selected = option_menu(
         menu_title=None,
-        options=["📊 仪表板", "👥 客户管理", "🧵 面料管理", "👜 包型管理", "📦 库存管理", "📋 订单管理"],
-        icons=["graph-up", "people", "palette", "bag", "box", "clipboard-check"],
+        options=["📊 仪表板", "👥 客户管理", "🧵 面料管理", "👜 包型管理", "📦 库存管理", "📋 订单管理", "⚙️ 系统设置"],
+        icons=["graph-up", "people", "palette", "bag", "box", "clipboard-check", "gear"],
         menu_icon="cast",
         default_index=0,
         styles={
@@ -362,13 +369,84 @@ elif selected == "👥 客户管理":
         if customers:
             df_customers = pd.DataFrame(customers)
             
-            # 搜索功能
-            search_term = st.text_input("🔍 搜索客户", placeholder="输入客户昵称或手机尾号")
+            # 搜索和筛选区域
+            st.markdown("#### 🔍 搜索与筛选")
+            col1, col2, col3 = st.columns([2, 1, 1])
+            
+            with col1:
+                search_term = st.text_input("🔍 搜索客户", placeholder="输入客户昵称、手机尾号或备注...", key="customer_search")
+            
+            with col2:
+                points_filter = st.selectbox("积分范围", ["全部", "0-100", "100-500", "500-1000", "1000以上"], key="points_filter")
+            
+            with col3:
+                has_notes_filter = st.selectbox("备注状态", ["全部", "有备注", "无备注"], key="notes_filter")
+            
+            # 排序选项
+            col4, col5 = st.columns(2)
+            with col4:
+                sort_by = st.selectbox("排序方式", ["创建时间", "客户昵称", "积分", "更新时间"], key="customer_sort")
+            with col5:
+                sort_order = st.selectbox("排序顺序", ["降序", "升序"], key="customer_order")
+            
+            # 应用搜索筛选
             if search_term:
                 df_customers = df_customers[
                     df_customers['nickname'].str.contains(search_term, case=False, na=False) |
-                    df_customers['phone_suffix'].str.contains(search_term, case=False, na=False)
+                    df_customers['phone_suffix'].str.contains(search_term, case=False, na=False) |
+                    df_customers['notes'].str.contains(search_term, case=False, na=False)
                 ]
+            
+            # 积分范围筛选
+            if points_filter != "全部":
+                if points_filter == "0-100":
+                    df_customers = df_customers[(df_customers['points'] >= 0) & (df_customers['points'] <= 100)]
+                elif points_filter == "100-500":
+                    df_customers = df_customers[(df_customers['points'] > 100) & (df_customers['points'] <= 500)]
+                elif points_filter == "500-1000":
+                    df_customers = df_customers[(df_customers['points'] > 500) & (df_customers['points'] <= 1000)]
+                elif points_filter == "1000以上":
+                    df_customers = df_customers[df_customers['points'] > 1000]
+            
+            # 备注状态筛选
+            if has_notes_filter != "全部":
+                if has_notes_filter == "有备注":
+                    df_customers = df_customers[df_customers['notes'].notna() & (df_customers['notes'] != "")]
+                elif has_notes_filter == "无备注":
+                    df_customers = df_customers[df_customers['notes'].isna() | (df_customers['notes'] == "")]
+            
+            # 排序
+            sort_column_map = {
+                "创建时间": "created_at",
+                "客户昵称": "nickname",
+                "积分": "points",
+                "更新时间": "updated_at"
+            }
+            sort_column = sort_column_map[sort_by]
+            ascending = sort_order == "升序"
+            df_customers = df_customers.sort_values(by=sort_column, ascending=ascending)
+            
+            # 显示筛选结果统计
+            total_count = len(customers)
+            filtered_count = len(df_customers)
+            if filtered_count != total_count:
+                st.info(f"📊 显示 {filtered_count} / {total_count} 个客户")
+            else:
+                st.info(f"📊 共 {total_count} 个客户")
+            
+            # 客户统计信息
+            if len(customers) > 0:
+                total_points = sum(customer['points'] for customer in customers)
+                avg_points = total_points / len(customers)
+                high_value_customers = len([c for c in customers if c['points'] > 500])
+                
+                col_stat1, col_stat2, col_stat3 = st.columns(3)
+                with col_stat1:
+                    st.metric("总积分", f"{total_points:,}")
+                with col_stat2:
+                    st.metric("平均积分", f"{avg_points:.0f}")
+                with col_stat3:
+                    st.metric("高价值客户(>500积分)", high_value_customers)
             
             # 显示客户列表
             for _, customer in df_customers.iterrows():
@@ -446,12 +524,25 @@ elif selected == "🧵 面料管理":
     with tab1:
         st.markdown("### 📋 面料列表")
         
-        # 筛选选项
-        col1, col2 = st.columns(2)
+        # 搜索和筛选区域
+        st.markdown("#### 🔍 搜索与筛选")
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
         with col1:
-            material_filter = st.selectbox("材质类型筛选", ["全部", "细帆", "细帆绗棉", "缎面绗棉"])
+            search_term = st.text_input("🔍 搜索面料", placeholder="输入面料名称进行搜索...", key="fabric_search")
+        
         with col2:
-            usage_filter = st.selectbox("用途筛选", ["全部", "表布", "里布"])
+            material_filter = st.selectbox("材质类型", ["全部", "细帆", "细帆绗棉", "缎面绗棉"], key="material_filter")
+        
+        with col3:
+            usage_filter = st.selectbox("用途类型", ["全部", "表布", "里布"], key="usage_filter")
+        
+        # 排序选项
+        col4, col5 = st.columns(2)
+        with col4:
+            sort_by = st.selectbox("排序方式", ["创建时间", "名称", "材质类型", "用途类型"], key="fabric_sort")
+        with col5:
+            sort_order = st.selectbox("排序顺序", ["降序", "升序"], key="fabric_order")
         
         # 添加加载状态
         with st.spinner("正在加载面料数据..."):
@@ -460,11 +551,34 @@ elif selected == "🧵 面料管理":
         if fabrics:
             df_fabrics = pd.DataFrame(fabrics)
             
-            # 应用筛选
+            # 应用搜索筛选
+            if search_term:
+                df_fabrics = df_fabrics[df_fabrics['name'].str.contains(search_term, case=False, na=False)]
+            
             if material_filter != "全部":
                 df_fabrics = df_fabrics[df_fabrics['material_type'] == material_filter]
+            
             if usage_filter != "全部":
                 df_fabrics = df_fabrics[df_fabrics['usage_type'] == usage_filter]
+            
+            # 应用排序
+            sort_column_map = {
+                "创建时间": "created_at",
+                "名称": "name", 
+                "材质类型": "material_type",
+                "用途类型": "usage_type"
+            }
+            sort_column = sort_column_map[sort_by]
+            ascending = sort_order == "升序"
+            df_fabrics = df_fabrics.sort_values(by=sort_column, ascending=ascending)
+            
+            # 显示筛选结果统计
+            total_count = len(fabrics)
+            filtered_count = len(df_fabrics)
+            if filtered_count != total_count:
+                st.info(f"📊 显示 {filtered_count} / {total_count} 个面料")
+            else:
+                st.info(f"📊 共 {total_count} 个面料")
             
             # 显示面料列表
             for _, fabric in df_fabrics.iterrows():
@@ -772,12 +886,91 @@ elif selected == "📦 库存管理":
         inventory_items = db.get_inventory_items()
         
         if inventory_items:
-            # 搜索功能
-            search_term = st.text_input("🔍 搜索商品", placeholder="输入商品名称")
+            # 搜索和筛选区域
+            st.markdown("#### 🔍 搜索与筛选")
+            col1, col2, col3 = st.columns([2, 1, 1])
             
-            filtered_items = inventory_items
+            with col1:
+                search_term = st.text_input("🔍 搜索商品", placeholder="输入商品名称或描述...", key="inventory_search")
+            
+            with col2:
+                stock_filter = st.selectbox("库存状态", ["全部", "充足(>10)", "偏少(1-10)", "缺货(0)"], key="stock_filter")
+            
+            with col3:
+                price_filter = st.selectbox("价格范围", ["全部", "0-50元", "50-100元", "100-200元", "200元以上"], key="price_filter")
+            
+            # 排序选项
+            col4, col5 = st.columns(2)
+            with col4:
+                sort_by = st.selectbox("排序方式", ["创建时间", "商品名称", "价格", "库存量"], key="inventory_sort")
+            with col5:
+                sort_order = st.selectbox("排序顺序", ["降序", "升序"], key="inventory_order")
+            
+            # 应用筛选
+            filtered_items = inventory_items.copy()
+            
+            # 搜索筛选
             if search_term:
-                filtered_items = [item for item in inventory_items if search_term.lower() in item['product_name'].lower()]
+                filtered_items = [item for item in filtered_items 
+                                if search_term.lower() in item['product_name'].lower() 
+                                or (item['description'] and search_term.lower() in item['description'].lower())]
+            
+            # 库存状态筛选
+            if stock_filter != "全部":
+                if stock_filter == "充足(>10)":
+                    filtered_items = [item for item in filtered_items if item['quantity'] > 10]
+                elif stock_filter == "偏少(1-10)":
+                    filtered_items = [item for item in filtered_items if 1 <= item['quantity'] <= 10]
+                elif stock_filter == "缺货(0)":
+                    filtered_items = [item for item in filtered_items if item['quantity'] == 0]
+            
+            # 价格范围筛选
+            if price_filter != "全部":
+                if price_filter == "0-50元":
+                    filtered_items = [item for item in filtered_items if 0 <= item['price'] <= 50]
+                elif price_filter == "50-100元":
+                    filtered_items = [item for item in filtered_items if 50 < item['price'] <= 100]
+                elif price_filter == "100-200元":
+                    filtered_items = [item for item in filtered_items if 100 < item['price'] <= 200]
+                elif price_filter == "200元以上":
+                    filtered_items = [item for item in filtered_items if item['price'] > 200]
+            
+            # 排序
+            sort_key_map = {
+                "创建时间": "created_at",
+                "商品名称": "product_name",
+                "价格": "price",
+                "库存量": "quantity"
+            }
+            sort_key = sort_key_map[sort_by]
+            reverse = sort_order == "降序"
+            filtered_items = sorted(filtered_items, key=lambda x: x[sort_key], reverse=reverse)
+            
+            # 显示筛选结果统计
+            total_count = len(inventory_items)
+            filtered_count = len(filtered_items)
+            if filtered_count != total_count:
+                st.info(f"📊 显示 {filtered_count} / {total_count} 个商品")
+            else:
+                st.info(f"📊 共 {total_count} 个商品")
+            
+            # 库存状态统计
+            stock_stats = {"充足": 0, "偏少": 0, "缺货": 0}
+            for item in inventory_items:
+                if item['quantity'] > 10:
+                    stock_stats["充足"] += 1
+                elif item['quantity'] > 0:
+                    stock_stats["偏少"] += 1
+                else:
+                    stock_stats["缺货"] += 1
+            
+            col_stat1, col_stat2, col_stat3 = st.columns(3)
+            with col_stat1:
+                st.metric("🟢 库存充足", stock_stats["充足"])
+            with col_stat2:
+                st.metric("🟡 库存偏少", stock_stats["偏少"])
+            with col_stat3:
+                st.metric("🔴 库存缺货", stock_stats["缺货"])
             
             # 显示库存列表
             for item in filtered_items:
@@ -865,12 +1058,15 @@ elif selected == "📋 订单管理":
             st.session_state.selected_orders = set()
         
         # 搜索和筛选区域
+        st.markdown("#### 🔍 搜索与筛选")
+        
+        # 第一行：搜索框和状态筛选
         col1, col2, col3 = st.columns([3, 2, 2])
         
         with col1:
-            search_term = st.text_input("🔍 搜索订单 (客户名称/订单ID)", 
+            search_term = st.text_input("🔍 搜索订单", 
                                       value=st.session_state.order_search,
-                                      placeholder="输入客户名称或订单ID...")
+                                      placeholder="输入客户名称、订单ID或备注...")
             if search_term != st.session_state.order_search:
                 st.session_state.order_search = search_term
                 st.session_state.order_page = 1  # 重置到第一页
@@ -889,110 +1085,160 @@ elif selected == "📋 订单管理":
         with col3:
             page_size = st.selectbox("📄 每页显示", [10, 20, 50], index=0)
         
-        # 获取分页数据
-        orders, total_count = db.get_orders_paginated(
-            page=st.session_state.order_page,
-            page_size=page_size,
-            search_term=st.session_state.order_search,
-            status_filter=st.session_state.order_status_filter if st.session_state.order_status_filter != "all" else None
-        )
+        # 第二行：日期筛选和金额筛选
+        col4, col5, col6 = st.columns(3)
+        
+        with col4:
+            # 日期筛选
+            date_filter = st.selectbox("📅 创建时间", 
+                                     ["全部", "今天", "本周", "本月", "最近7天", "最近30天"],
+                                     key="order_date_filter")
+        
+        with col5:
+            # 金额范围筛选
+            amount_filter = st.selectbox("💰 订单金额", 
+                                       ["全部", "0-100", "100-500", "500-1000", "1000以上"],
+                                       key="order_amount_filter")
+        
+        with col6:
+            # 排序选项
+            sort_by = st.selectbox("📊 排序方式", 
+                                 ["创建时间(新到旧)", "创建时间(旧到新)", "金额(高到低)", "金额(低到高)"],
+                                 key="order_sort")
+        
+        # 缓存机制 - 避免重复查询
+        cache_key = f"orders_{st.session_state.order_page}_{page_size}_{st.session_state.order_search}_{st.session_state.order_status_filter}_{date_filter}_{amount_filter}_{sort_by}"
+        
+        # 检查缓存
+        if ('order_cache_key' not in st.session_state or 
+            st.session_state.order_cache_key != cache_key or
+            'order_cache_data' not in st.session_state):
+            
+            # 显示加载状态
+            with st.spinner("🔄 正在加载订单数据..."):
+                # 获取分页数据
+                orders, total_count = db.get_orders_paginated(
+                    page=st.session_state.order_page,
+                    page_size=page_size,
+                    search_term=st.session_state.order_search,
+                    status_filter=st.session_state.order_status_filter if st.session_state.order_status_filter != "all" else None,
+                    date_filter=date_filter,
+                    amount_filter=amount_filter,
+                    sort_by=sort_by
+                )
+            
+            # 缓存数据
+            st.session_state.order_cache_key = cache_key
+            st.session_state.order_cache_data = (orders, total_count)
+        else:
+            # 使用缓存数据
+            orders, total_count = st.session_state.order_cache_data
         
         if total_count > 0:
-            # 分页信息
+            # 订单统计信息
+            if orders:
+                total_amount = sum(order['total_amount'] for order in orders)
+                completed_orders = len([order for order in orders if order['status'] == 'completed'])
+                pending_orders = len([order for order in orders if order['status'] == 'pending'])
+                
+                col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+                with col_stat1:
+                    st.metric("当前页订单数", len(orders))
+                with col_stat2:
+                    st.metric("当前页总金额", f"¥{total_amount:.2f}")
+                with col_stat3:
+                    st.metric("已完成", completed_orders)
+                with col_stat4:
+                    st.metric("待完成", pending_orders)
+            
+            # 分页和批量操作区域
+            col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
+            
             total_pages = (total_count + page_size - 1) // page_size
-            st.markdown(f"**共 {total_count} 个订单，第 {st.session_state.order_page} / {total_pages} 页**")
-            
-            # 分页控制
-            col1, col2, col3, col4, col5 = st.columns([1, 1, 2, 1, 1])
-            
-            with col1:
-                if st.button("⏮️ 首页", disabled=st.session_state.order_page == 1):
-                    st.session_state.order_page = 1
-                    st.rerun()
-            
-            with col2:
-                if st.button("⏪ 上页", disabled=st.session_state.order_page == 1):
-                    st.session_state.order_page -= 1
-                    st.rerun()
-            
-            with col3:
-                # 页码跳转
-                new_page = st.number_input("跳转到页", min_value=1, max_value=total_pages, 
-                                         value=st.session_state.order_page, key="page_jump")
-                if new_page != st.session_state.order_page:
-                    st.session_state.order_page = new_page
-                    st.rerun()
-            
-            with col4:
-                if st.button("⏩ 下页", disabled=st.session_state.order_page == total_pages):
-                    st.session_state.order_page += 1
-                    st.rerun()
-            
-            with col5:
-                if st.button("⏭️ 末页", disabled=st.session_state.order_page == total_pages):
-                    st.session_state.order_page = total_pages
-                    st.rerun()
-            
-            st.markdown("---")
-            
-            # 批量操作区域
-            col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 2])
-            
             current_order_ids = {order['id'] for order in orders}
+            selected_count = len(st.session_state.selected_orders)
             
             with col1:
-                if st.button("🔲 全选当页", use_container_width=True):
-                    st.session_state.selected_orders.update(current_order_ids)
-                    st.rerun()
+                # 分页控制
+                st.markdown(f"**第 {st.session_state.order_page} / {total_pages} 页**")
+                page_col1, page_col2 = st.columns(2)
+                with page_col1:
+                    if st.button("⏪ 上页", disabled=st.session_state.order_page == 1, use_container_width=True):
+                        st.session_state.order_page -= 1
+                        st.rerun()
+                with page_col2:
+                    if st.button("下页 ⏩", disabled=st.session_state.order_page == total_pages, use_container_width=True):
+                        st.session_state.order_page += 1
+                        st.rerun()
             
             with col2:
-                if st.button("⬜ 取消当页", use_container_width=True):
-                    st.session_state.selected_orders -= current_order_ids
-                    st.rerun()
+                # 批量选择
+                st.markdown("**批量选择**")
+                select_col1, select_col2 = st.columns(2)
+                with select_col1:
+                    if st.button("全选", use_container_width=True):
+                        st.session_state.selected_orders.update(current_order_ids)
+                        st.rerun()
+                with select_col2:
+                    if st.button("取消", use_container_width=True):
+                        st.session_state.selected_orders -= current_order_ids
+                        st.rerun()
             
             with col3:
-                selected_count = len(st.session_state.selected_orders)
-                st.write(f"已选择: {selected_count} 个")
-            
-            with col4:
+                # CSV导出
+                st.markdown(f"**已选择: {selected_count} 个**")
                 if st.button("📊 导出CSV", use_container_width=True, disabled=selected_count == 0):
                     if selected_count > 0:
-                        # 使用优化的CSV导出
-                        from csv_export import export_orders_to_csv_optimized, generate_csv_filename
-                        
-                        # 获取选中订单的完整数据
-                        orders_with_items = db.get_orders_with_items_for_export(list(st.session_state.selected_orders))
-                        
-                        # 生成CSV
-                        csv_content = export_orders_to_csv_optimized(orders_with_items)
-                        filename = generate_csv_filename()
-                        
-                        # 提供下载
-                        st.download_button(
-                            label="💾 下载CSV文件",
-                            data=csv_content,
-                            file_name=filename,
-                            mime="text/csv",
-                            use_container_width=True
-                        )
-                        
-                        st.success(f"✅ 已生成 {selected_count} 个订单的CSV文件")
+                        try:
+                            # 使用优化的CSV导出
+                            from csv_export import export_orders_to_csv_optimized, generate_csv_filename
+                            
+                            # 获取选中订单的完整数据
+                            orders_with_items = db.get_orders_with_items_for_export(list(st.session_state.selected_orders))
+                            
+                            # 生成CSV
+                            csv_content = export_orders_to_csv_optimized(orders_with_items)
+                            filename = generate_csv_filename()
+                            
+                            # 提供下载
+                            st.download_button(
+                                label="💾 下载CSV文件",
+                                data=csv_content,
+                                file_name=filename,
+                                mime="text/csv",
+                                use_container_width=True,
+                                key="download_csv_btn"
+                            )
+                            
+                            st.success(f"✅ 已生成 {selected_count} 个订单的CSV文件")
+                        except Exception as e:
+                            st.error(f"❌ CSV导出失败: {str(e)}")
             
-            with col5:
+            with col4:
+                # 批量删除
+                st.markdown("**批量操作**")
                 if st.button("🗑️ 批量删除", use_container_width=True, disabled=selected_count == 0, type="secondary"):
                     if selected_count > 0:
                         # 确认删除
                         if st.session_state.get('confirm_batch_delete', False):
-                            deleted_count, failed_ids = db.delete_orders_batch(list(st.session_state.selected_orders))
-                            
-                            if deleted_count > 0:
-                                st.success(f"✅ 成功删除 {deleted_count} 个订单")
-                                st.session_state.selected_orders = set()
-                                st.session_state.confirm_batch_delete = False
-                                st.rerun()
-                            
-                            if failed_ids:
-                                st.warning(f"⚠️ {len(failed_ids)} 个订单删除失败（可能是已完成状态）")
+                            try:
+                                deleted_count, failed_ids = db.delete_orders_batch(list(st.session_state.selected_orders))
+                                
+                                if deleted_count > 0:
+                                    st.success(f"✅ 成功删除 {deleted_count} 个订单")
+                                    st.session_state.selected_orders = set()
+                                    st.session_state.confirm_batch_delete = False
+                                    # 清理缓存
+                                    if 'order_cache_key' in st.session_state:
+                                        del st.session_state.order_cache_key
+                                    if 'order_cache_data' in st.session_state:
+                                        del st.session_state.order_cache_data
+                                    st.rerun()
+                                
+                                if failed_ids:
+                                    st.warning(f"⚠️ {len(failed_ids)} 个订单删除失败（可能是已完成状态）")
+                            except Exception as e:
+                                st.error(f"❌ 批量删除失败: {str(e)}")
                         else:
                             st.session_state.confirm_batch_delete = True
                             st.warning(f"⚠️ 确认要删除 {selected_count} 个订单吗？再次点击确认删除。")
@@ -1057,6 +1303,11 @@ elif selected == "📋 订单管理":
                                     if st.button("💳", key=f"complete_{order['id']}", help="完成支付"):
                                         db.complete_order_payment(order['id'])
                                         st.success("✅ 订单支付完成")
+                                        # 清理缓存
+                                        if 'order_cache_key' in st.session_state:
+                                            del st.session_state.order_cache_key
+                                        if 'order_cache_data' in st.session_state:
+                                            del st.session_state.order_cache_data
                                         st.rerun()
                             
                             with btn_col4:
@@ -1065,6 +1316,11 @@ elif selected == "📋 订单管理":
                                         success = db.delete_order(order['id'])
                                         if success:
                                             st.success("✅ 订单已删除")
+                                            # 清理缓存
+                                            if 'order_cache_key' in st.session_state:
+                                                del st.session_state.order_cache_key
+                                            if 'order_cache_data' in st.session_state:
+                                                del st.session_state.order_cache_data
                                             st.rerun()
                                         else:
                                             st.error("❌ 删除失败")
@@ -1140,6 +1396,11 @@ elif selected == "📋 订单管理":
                                         if success:
                                             st.success("✅ 订单信息已更新")
                                             st.session_state[f"edit_order_{order['id']}"] = False
+                                            # 清理缓存
+                                            if 'order_cache_key' in st.session_state:
+                                                del st.session_state.order_cache_key
+                                            if 'order_cache_data' in st.session_state:
+                                                del st.session_state.order_cache_data
                                             st.rerun()
                                         else:
                                             st.error("❌ 更新失败")
@@ -1342,6 +1603,11 @@ elif selected == "📋 订单管理":
                         points_earned = int(total_amount)
                         
                         st.session_state.order_items = []  # 清空订单商品
+                        # 清理缓存
+                        if 'order_cache_key' in st.session_state:
+                            del st.session_state.order_cache_key
+                        if 'order_cache_data' in st.session_state:
+                            del st.session_state.order_cache_data
                         st.success(f"✅ 订单创建成功！订单号: {order_id}")
                         st.success(f"💰 订单金额: ¥{total_amount:.2f}，客户获得 {points_earned} 积分")
                         st.rerun()
@@ -1351,12 +1617,169 @@ elif selected == "📋 订单管理":
                         st.session_state.order_items = []
                         st.rerun()
 
+# 系统设置页面
+elif selected == "⚙️ 系统设置":
+    st.markdown("## ⚙️ 系统设置")
+    
+    # 创建选项卡
+    tab1, tab2, tab3 = st.tabs(["🗄️ 自动备份", "📊 系统信息", "🔧 高级设置"])
+    
+    with tab1:
+        st.markdown("### 🗄️ 自动备份管理")
+        
+        # 备份状态信息
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### 📋 备份状态")
+            from auto_backup import AutoBackup
+            backup_manager = AutoBackup(db)
+            
+            # 检查今日备份状态
+            data_types = ["customers", "fabrics", "bag_types", "orders", "inventory"]
+            backup_status = {}
+            for data_type in data_types:
+                backup_status[data_type] = backup_manager.is_backup_exists_today(data_type)
+            
+            # 显示备份状态
+            for data_type, exists in backup_status.items():
+                type_names = {
+                    "customers": "👥 客户数据",
+                    "fabrics": "🧵 面料数据", 
+                    "bag_types": "👜 包型数据",
+                    "orders": "📋 订单数据",
+                    "inventory": "📦 库存数据"
+                }
+                status_icon = "✅" if exists else "❌"
+                st.write(f"{status_icon} {type_names[data_type]}: {'已备份' if exists else '未备份'}")
+        
+        with col2:
+            st.markdown("#### 🔄 备份操作")
+            
+            if st.button("🔄 立即执行完整备份", use_container_width=True):
+                with st.spinner("正在执行备份..."):
+                    from auto_backup import check_and_perform_backup
+                    check_and_perform_backup(db, force_backup=True)
+                st.rerun()
+            
+            st.markdown("---")
+            
+            # 备份历史
+            st.markdown("#### 📁 备份文件管理")
+            import os
+            backup_dir = "backups"
+            if os.path.exists(backup_dir):
+                backup_files = [f for f in os.listdir(backup_dir) if f.endswith('.json')]
+                backup_files.sort(reverse=True)  # 最新的在前
+                
+                if backup_files:
+                    st.write(f"📂 共找到 {len(backup_files)} 个备份文件：")
+                    
+                    # 显示最近的备份文件
+                    for i, file in enumerate(backup_files[:10]):  # 只显示最近10个
+                        file_path = os.path.join(backup_dir, file)
+                        file_size = os.path.getsize(file_path)
+                        file_size_kb = file_size / 1024
+                        
+                        col_file, col_size, col_action = st.columns([3, 1, 1])
+                        with col_file:
+                            st.write(f"📄 {file}")
+                        with col_size:
+                            st.write(f"{file_size_kb:.1f}KB")
+                        with col_action:
+                            if st.button("📥", key=f"download_{i}", help="下载备份文件"):
+                                with open(file_path, 'rb') as f:
+                                    st.download_button(
+                                        label="下载",
+                                        data=f.read(),
+                                        file_name=file,
+                                        mime="application/json",
+                                        key=f"download_btn_{i}"
+                                    )
+                else:
+                    st.info("📭 暂无备份文件")
+            else:
+                st.info("📁 备份目录不存在")
+    
+    with tab2:
+        st.markdown("### 📊 系统信息")
+        
+        # 数据统计
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### 📈 数据统计")
+            customers = db.get_customers()
+            orders = db.get_orders()
+            inventory_items = db.get_inventory_items()
+            fabrics = db.get_fabrics()
+            bag_types = db.get_bag_types()
+            
+            st.metric("👥 客户总数", len(customers))
+            st.metric("📋 订单总数", len(orders))
+            st.metric("📦 库存商品", len(inventory_items))
+            st.metric("🧵 面料种类", len(fabrics))
+            st.metric("👜 包型种类", len(bag_types))
+        
+        with col2:
+            st.markdown("#### 💾 数据库信息")
+            import sqlite3
+            import os
+            
+            db_path = "handmade_shop.db"
+            if os.path.exists(db_path):
+                db_size = os.path.getsize(db_path)
+                db_size_mb = db_size / (1024 * 1024)
+                st.metric("💾 数据库大小", f"{db_size_mb:.2f} MB")
+                
+                # 获取数据库表信息
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+                tables = cursor.fetchall()
+                conn.close()
+                
+                st.metric("📋 数据表数量", len(tables))
+                
+                # 显示表名
+                st.markdown("**数据表列表：**")
+                for table in tables:
+                    st.write(f"• {table[0]}")
+            else:
+                st.error("❌ 数据库文件不存在")
+    
+    with tab3:
+        st.markdown("### 🔧 高级设置")
+        
+        st.markdown("#### ⚠️ 危险操作")
+        st.warning("以下操作可能影响系统数据，请谨慎使用！")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("🗑️ 清理旧备份文件", use_container_width=True):
+                st.info("此功能将在后续版本中实现")
+        
+        with col2:
+            if st.button("🔄 重置缓存", use_container_width=True):
+                # 清理所有缓存
+                cache_keys = [key for key in st.session_state.keys() if 'cache' in key]
+                for key in cache_keys:
+                    del st.session_state[key]
+                st.success("✅ 缓存已清理")
+                st.rerun()
+        
+        st.markdown("---")
+        st.markdown("#### 📋 系统版本信息")
+        st.info("星之梦手作管理系统 v1.0.0")
+        st.info("最后更新：2025-10-17")
+
 # 页脚
 st.markdown("---")
 st.markdown(
     """
     <div style='text-align: center; color: #666; padding: 1rem;'>
-        🏪 生意管理系统 | 让生意管理更简单高效
+        🏪 星之梦手作管理系统 | 让生意管理更简单高效
     </div>
     """, 
     unsafe_allow_html=True

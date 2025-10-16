@@ -839,7 +839,8 @@ class DatabaseManager:
         conn.close()
         return orders
     
-    def get_orders_paginated(self, page: int = 1, page_size: int = 10, search_term: str = "", status_filter: str = "") -> Tuple[List[Dict], int]:
+    def get_orders_paginated(self, page: int = 1, page_size: int = 10, search_term: str = "", status_filter: str = "", 
+                           date_filter: str = "", amount_filter: str = "", sort_by: str = "创建时间(新到旧)") -> Tuple[List[Dict], int]:
         """获取分页订单列表"""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -857,9 +858,46 @@ class DatabaseManager:
             where_conditions.append("o.status = ?")
             params.append(status_filter)
         
+        # 日期筛选
+        if date_filter and date_filter != "全部":
+            if date_filter == "今天":
+                where_conditions.append("DATE(o.created_at) = DATE('now')")
+            elif date_filter == "本周":
+                where_conditions.append("DATE(o.created_at) >= DATE('now', 'weekday 0', '-7 days')")
+            elif date_filter == "本月":
+                where_conditions.append("DATE(o.created_at) >= DATE('now', 'start of month')")
+            elif date_filter == "最近7天":
+                where_conditions.append("DATE(o.created_at) >= DATE('now', '-7 days')")
+            elif date_filter == "最近30天":
+                where_conditions.append("DATE(o.created_at) >= DATE('now', '-30 days')")
+        
+        # 金额筛选
+        if amount_filter and amount_filter != "全部":
+            if amount_filter == "0-100":
+                where_conditions.append("o.total_amount >= 0 AND o.total_amount <= 100")
+            elif amount_filter == "100-500":
+                where_conditions.append("o.total_amount > 100 AND o.total_amount <= 500")
+            elif amount_filter == "500-1000":
+                where_conditions.append("o.total_amount > 500 AND o.total_amount <= 1000")
+            elif amount_filter == "1000以上":
+                where_conditions.append("o.total_amount > 1000")
+        
         where_clause = " AND ".join(where_conditions)
         if where_clause:
             where_clause = "WHERE " + where_clause
+        
+        # 排序条件
+        order_clause = "ORDER BY "
+        if sort_by == "创建时间(新到旧)":
+            order_clause += "o.created_at DESC"
+        elif sort_by == "创建时间(旧到新)":
+            order_clause += "o.created_at ASC"
+        elif sort_by == "金额(高到低)":
+            order_clause += "o.total_amount DESC"
+        elif sort_by == "金额(低到高)":
+            order_clause += "o.total_amount ASC"
+        else:
+            order_clause += "o.created_at DESC"
         
         # 获取总数
         count_query = f"""
@@ -878,7 +916,7 @@ class DatabaseManager:
             FROM orders o
             LEFT JOIN customers c ON o.customer_id = c.id
             {where_clause}
-            ORDER BY o.created_at DESC
+            {order_clause}
             LIMIT ? OFFSET ?
         """
         cursor.execute(data_query, params + [page_size, offset])

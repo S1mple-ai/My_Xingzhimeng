@@ -1,0 +1,53 @@
+{
+  "backup_date": "2025-10-17",
+  "backup_time": "2025-10-17 00:59:37",
+  "data_type": "orders",
+  "count": 1,
+  "data": [
+    {
+      "id": 4,
+      "customer_id": 1,
+      "total_amount": 86,
+      "status": "completed",
+      "notes": "订单备注",
+      "image_path": "2025-10-14 12:59:37",
+      "created_at": "2025-10-14 12:59:37",
+      "updated_at": "uploads\\images\\小熊小兔.png",
+      "customer_name": "薯条",
+      "items": [
+        {
+          "id": 6,
+          "order_id": 4,
+          "item_type": "现货",
+          "inventory_id": 2,
+          "bag_type_id": null,
+          "outer_fabric_id": null,
+          "inner_fabric_id": null,
+          "quantity": 1,
+          "unit_price": 38,
+          "notes": "",
+          "inventory_name": "中豆腐",
+          "bag_type_name": null,
+          "outer_fabric_name": null,
+          "inner_fabric_name": null
+        },
+        {
+          "id": 7,
+          "order_id": 4,
+          "item_type": "定制",
+          "inventory_id": null,
+          "bag_type_id": 5,
+          "outer_fabric_id": 1,
+          "inner_fabric_id": 3,
+          "quantity": 1,
+          "unit_price": 48,
+          "notes": "大号测试",
+          "inventory_name": null,
+          "bag_type_name": "大号衣物收纳",
+          "outer_fabric_name": "红KT",
+          "inner_fabric_name": "粉波点"
+        }
+      ]
+    }
+  ]
+}

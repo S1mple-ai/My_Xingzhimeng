@@ -4,6 +4,7 @@ import base64
 from PIL import Image
 import io
 from pathlib import Path
+import uuid
 
 def create_upload_directory():
     """创建上传目录"""
@@ -113,7 +114,9 @@ def drag_drop_image_uploader(key, label="上传图片", help_text="支持拖拽�
         try:
             image = Image.open(uploaded_file)
             st.markdown("#### 📷 图片预览")
-            st.image(image, caption=uploaded_file.name, use_column_width=True, width=300)
+            
+            # 使用增强的图片预览
+            enhanced_image_preview(image, uploaded_file.name, f"upload_{key}")
             
             # 保存文件
             file_path = save_uploaded_file(uploaded_file, "image")
@@ -207,6 +210,84 @@ def drag_drop_media_uploader(key, label="上传媒体文件", help_text="支持�
     
     return result
 
+def enhanced_image_preview(image, image_name, key_suffix=""):
+    """
+    增强的图片预览组件，支持缩放、全屏、旋转等功能
+    
+    Args:
+        image: PIL Image对象
+        image_name: 图片名称
+        key_suffix: 组件key后缀
+    """
+    unique_key = f"img_preview_{key_suffix}_{uuid.uuid4().hex[:8]}"
+    
+    # 获取图片信息
+    width, height = image.size
+    file_size = len(image.tobytes()) / 1024  # KB
+    
+    # 图片信息显示
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        st.markdown(f"**📷 {image_name}**")
+    with col2:
+        st.markdown(f"**尺寸:** {width}×{height}")
+    with col3:
+        st.markdown(f"**大小:** {file_size:.1f}KB")
+    
+    # 控制按钮
+    col1, col2, col3, col4, col5 = st.columns(5)
+    
+    with col1:
+        zoom_in = st.button("🔍 放大", key=f"zoom_in_{unique_key}")
+    with col2:
+        zoom_out = st.button("🔍 缩小", key=f"zoom_out_{unique_key}")
+    with col3:
+        rotate_left = st.button("↺ 左转", key=f"rotate_left_{unique_key}")
+    with col4:
+        rotate_right = st.button("↻ 右转", key=f"rotate_right_{unique_key}")
+    with col5:
+        fullscreen = st.button("⛶ 全屏", key=f"fullscreen_{unique_key}")
+    
+    # 初始化session state
+    if f"zoom_{unique_key}" not in st.session_state:
+        st.session_state[f"zoom_{unique_key}"] = 1.0
+    if f"rotation_{unique_key}" not in st.session_state:
+        st.session_state[f"rotation_{unique_key}"] = 0
+    
+    # 处理按钮点击
+    if zoom_in:
+        st.session_state[f"zoom_{unique_key}"] = min(3.0, st.session_state[f"zoom_{unique_key}"] + 0.2)
+    if zoom_out:
+        st.session_state[f"zoom_{unique_key}"] = max(0.5, st.session_state[f"zoom_{unique_key}"] - 0.2)
+    if rotate_left:
+        st.session_state[f"rotation_{unique_key}"] = (st.session_state[f"rotation_{unique_key}"] - 90) % 360
+    if rotate_right:
+        st.session_state[f"rotation_{unique_key}"] = (st.session_state[f"rotation_{unique_key}"] + 90) % 360
+    
+    # 应用变换
+    display_image = image.copy()
+    if st.session_state[f"rotation_{unique_key}"] != 0:
+        display_image = display_image.rotate(st.session_state[f"rotation_{unique_key}"], expand=True)
+    
+    # 计算显示尺寸
+    zoom = st.session_state[f"zoom_{unique_key}"]
+    display_width = int(min(600, width * zoom))
+    
+    # 显示图片
+    if fullscreen:
+        # 全屏模式
+        st.markdown("### 🖼️ 全屏预览")
+        st.image(display_image, caption=f"{image_name} (缩放: {zoom:.1f}x, 旋转: {st.session_state[f'rotation_{unique_key}']}°)", 
+                use_column_width=True)
+        if st.button("❌ 关闭全屏", key=f"close_fullscreen_{unique_key}"):
+            st.rerun()
+    else:
+        # 普通预览模式
+        st.image(display_image, caption=f"{image_name} (缩放: {zoom:.1f}x)", width=display_width)
+    
+    # 显示当前状态
+    st.markdown(f"**当前状态:** 缩放 {zoom:.1f}x | 旋转 {st.session_state[f'rotation_{unique_key}']}°")
+
 def display_uploaded_media(image_path=None, video_path=None):
     """
     显示已上传的媒体文件
@@ -225,7 +306,8 @@ def display_uploaded_media(image_path=None, video_path=None):
                 st.markdown("**📷 图片:**")
                 try:
                     image = Image.open(image_path)
-                    st.image(image, caption=os.path.basename(image_path), width=200)
+                    # 使用增强的图片预览
+                    enhanced_image_preview(image, os.path.basename(image_path), f"uploaded_{hash(image_path)}")
                 except Exception as e:
                     st.error(f"无法显示图片: {str(e)}")
             else:
@@ -236,6 +318,9 @@ def display_uploaded_media(image_path=None, video_path=None):
                 st.markdown("**🎥 视频:**")
                 try:
                     st.video(video_path)
+                    # 显示视频信息
+                    file_size = os.path.getsize(video_path) / (1024 * 1024)  # MB
+                    st.markdown(f"**文件大小:** {file_size:.1f}MB")
                 except Exception as e:
                     st.error(f"无法显示视频: {str(e)}")
             else:
