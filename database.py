@@ -61,34 +61,7 @@ class DatabaseManager:
             # 字段已存在，忽略错误
             pass
         
-        # 包型分类表
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS bag_categories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                parent_id INTEGER,
-                level INTEGER DEFAULT 1,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (parent_id) REFERENCES bag_categories (id)
-            )
-        ''')
-        
-        # 包型表
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS bag_types (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                category_id INTEGER,
-                subcategory_id INTEGER,
-                price DECIMAL(10,2),
-                image_path TEXT,
-                video_path TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (category_id) REFERENCES bag_categories (id),
-                FOREIGN KEY (subcategory_id) REFERENCES bag_categories (id)
-            )
-        ''')
+
         
         # 库存表
         cursor.execute('''
@@ -133,7 +106,6 @@ class DatabaseManager:
                 order_id INTEGER NOT NULL,
                 item_type TEXT CHECK(item_type IN ('现货', '定制')),
                 inventory_id INTEGER,
-                bag_type_id INTEGER,
                 outer_fabric_id INTEGER,
                 inner_fabric_id INTEGER,
                 quantity INTEGER DEFAULT 1,
@@ -141,11 +113,58 @@ class DatabaseManager:
                 notes TEXT,
                 FOREIGN KEY (order_id) REFERENCES orders (id),
                 FOREIGN KEY (inventory_id) REFERENCES inventory (id),
-                FOREIGN KEY (bag_type_id) REFERENCES bag_types (id),
                 FOREIGN KEY (outer_fabric_id) REFERENCES fabrics (id),
                 FOREIGN KEY (inner_fabric_id) REFERENCES fabrics (id)
             )
         ''')
+        
+        # 为现有的order_items表添加新字段（如果不存在）
+        try:
+            cursor.execute('ALTER TABLE order_items ADD COLUMN outer_fabric_id INTEGER')
+        except sqlite3.OperationalError:
+            pass
+        
+        try:
+            cursor.execute('ALTER TABLE order_items ADD COLUMN inner_fabric_id INTEGER')
+        except sqlite3.OperationalError:
+            pass
+        
+        # 更新item_type的约束以支持定制商品
+        try:
+            # 创建新表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS order_items_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    order_id INTEGER NOT NULL,
+                    item_type TEXT CHECK(item_type IN ('现货', '定制')),
+                    inventory_id INTEGER,
+                    outer_fabric_id INTEGER,
+                    inner_fabric_id INTEGER,
+                    quantity INTEGER DEFAULT 1,
+                    unit_price DECIMAL(10,2),
+                    notes TEXT,
+                    FOREIGN KEY (order_id) REFERENCES orders (id),
+                    FOREIGN KEY (inventory_id) REFERENCES inventory (id),
+                    FOREIGN KEY (outer_fabric_id) REFERENCES fabrics (id),
+                    FOREIGN KEY (inner_fabric_id) REFERENCES fabrics (id)
+                )
+            ''')
+            
+            # 复制数据
+            cursor.execute('''
+                INSERT INTO order_items_new (id, order_id, item_type, inventory_id, outer_fabric_id, inner_fabric_id, quantity, unit_price, notes)
+                SELECT id, order_id, item_type, inventory_id, outer_fabric_id, inner_fabric_id, quantity, unit_price, notes
+                FROM order_items
+            ''')
+            
+            # 删除旧表
+            cursor.execute('DROP TABLE order_items')
+            
+            # 重命名新表
+            cursor.execute('ALTER TABLE order_items_new RENAME TO order_items')
+        except sqlite3.OperationalError:
+            # 如果操作失败，说明表结构已经正确
+            pass
         
         conn.commit()
         conn.close()
@@ -471,207 +490,7 @@ class DatabaseManager:
                 conn.close()
             raise Exception(f"删除面料失败: {str(e)}")
     
-    # 包型分类管理
-    def add_bag_category(self, name: str, parent_id: int = None) -> int:
-        """添加包型分类"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        level = 1
-        if parent_id:
-            cursor.execute("SELECT level FROM bag_categories WHERE id=?", (parent_id,))
-            parent_level = cursor.fetchone()
-            if parent_level:
-                level = parent_level[0] + 1
-        
-        cursor.execute(
-            "INSERT INTO bag_categories (name, parent_id, level) VALUES (?, ?, ?)",
-            (name, parent_id, level)
-        )
-        category_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        return category_id
-    
-    def get_bag_categories(self, parent_id: int = None) -> List[Dict]:
-        """获取包型分类"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        if parent_id is None:
-            cursor.execute("SELECT * FROM bag_categories WHERE parent_id IS NULL ORDER BY created_at")
-        else:
-            cursor.execute("SELECT * FROM bag_categories WHERE parent_id=? ORDER BY created_at", (parent_id,))
-        
-        categories = []
-        for row in cursor.fetchall():
-            categories.append({
-                'id': row[0], 'name': row[1], 'parent_id': row[2],
-                'level': row[3], 'created_at': row[4]
-            })
-        conn.close()
-        return categories
-    
-    def update_bag_category(self, category_id: int, name: str, parent_id: int = None) -> bool:
-        """更新包型分类"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        # 计算新的层级
-        level = 1
-        if parent_id:
-            cursor.execute("SELECT level FROM bag_categories WHERE id=?", (parent_id,))
-            parent_level = cursor.fetchone()
-            if parent_level:
-                level = parent_level[0] + 1
-        
-        cursor.execute(
-            "UPDATE bag_categories SET name=?, parent_id=?, level=? WHERE id=?",
-            (name, parent_id, level, category_id)
-        )
-        success = cursor.rowcount > 0
-        conn.commit()
-        conn.close()
-        return success
-    
-    def delete_bag_category(self, category_id: int) -> bool:
-        """删除包型分类（级联删除子分类）"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        # 检查是否有子分类
-        cursor.execute("SELECT COUNT(*) FROM bag_categories WHERE parent_id=?", (category_id,))
-        child_count = cursor.fetchone()[0]
-        
-        # 检查是否有包型使用此分类
-        cursor.execute("SELECT COUNT(*) FROM bag_types WHERE main_category_id=? OR subcategory_id=?", 
-                      (category_id, category_id))
-        bag_count = cursor.fetchone()[0]
-        
-        if child_count > 0 or bag_count > 0:
-            conn.close()
-            return False  # 有子分类或包型使用，不能删除
-        
-        cursor.execute("DELETE FROM bag_categories WHERE id=?", (category_id,))
-        success = cursor.rowcount > 0
-        conn.commit()
-        conn.close()
-        return success
-    
-    def get_all_bag_categories_tree(self) -> List[Dict]:
-        """获取所有分类的树形结构"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM bag_categories ORDER BY level, created_at")
-        
-        categories = []
-        for row in cursor.fetchall():
-            categories.append({
-                'id': row[0], 'name': row[1], 'parent_id': row[2],
-                'level': row[3], 'created_at': row[4]
-            })
-        conn.close()
-        return categories
-    
-    # 包型管理
-    def add_bag_type(self, name: str, category_id: int, subcategory_id: int = None, 
-                     price: float = 0, image_path: str = "", video_path: str = "") -> int:
-        """添加包型"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO bag_types (name, category_id, subcategory_id, price, image_path, video_path) VALUES (?, ?, ?, ?, ?, ?)",
-            (name, category_id, subcategory_id, price, image_path, video_path)
-        )
-        bag_type_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        return bag_type_id
-    
-    def get_bag_types(self) -> List[Dict]:
-        """获取包型列表"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT bt.*, bc1.name as category_name, bc2.name as subcategory_name
-            FROM bag_types bt
-            LEFT JOIN bag_categories bc1 ON bt.category_id = bc1.id
-            LEFT JOIN bag_categories bc2 ON bt.subcategory_id = bc2.id
-            ORDER BY bt.created_at DESC
-        """)
-        
-        bag_types = []
-        for row in cursor.fetchall():
-            bag_types.append({
-                'id': row[0], 'name': row[1], 'category_id': row[2], 'subcategory_id': row[3],
-                'price': row[4], 'image_path': row[5], 'video_path': row[6],
-                'created_at': row[7], 'updated_at': row[8],
-                'category_name': row[9], 'subcategory_name': row[10]
-            })
-        conn.close()
-        return bag_types
-    
-    def get_bag_type_by_id(self, bag_type_id: int) -> Optional[Dict]:
-        """根据ID获取包型信息"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT bt.*, bc1.name as category_name, bc2.name as subcategory_name
-            FROM bag_types bt
-            LEFT JOIN bag_categories bc1 ON bt.category_id = bc1.id
-            LEFT JOIN bag_categories bc2 ON bt.subcategory_id = bc2.id
-            WHERE bt.id = ?
-        """, (bag_type_id,))
-        
-        row = cursor.fetchone()
-        conn.close()
-        
-        if row:
-            return {
-                'id': row[0], 'name': row[1], 'category_id': row[2], 'subcategory_id': row[3],
-                'price': row[4], 'image_path': row[5], 'video_path': row[6],
-                'created_at': row[7], 'updated_at': row[8],
-                'category_name': row[9], 'subcategory_name': row[10]
-            }
-        return None
-    
-    def update_bag_type(self, bag_type_id: int, name: str, category_id: int, 
-                       subcategory_id: int = None, price: float = 0, 
-                       image_path: str = "", video_path: str = "") -> bool:
-        """更新包型信息"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE bag_types 
-            SET name=?, category_id=?, subcategory_id=?, price=?, 
-                image_path=?, video_path=?, updated_at=CURRENT_TIMESTAMP 
-            WHERE id=?
-        """, (name, category_id, subcategory_id, price, image_path, video_path, bag_type_id))
-        
-        success = cursor.rowcount > 0
-        conn.commit()
-        conn.close()
-        return success
-    
-    def delete_bag_type(self, bag_type_id: int) -> bool:
-        """删除包型（检查是否有关联的订单项）"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        # 检查是否有订单项使用此包型
-        cursor.execute("""
-            SELECT COUNT(*) FROM order_items 
-            WHERE item_type = '定制' AND bag_type_id = ?
-        """, (bag_type_id,))
-        order_count = cursor.fetchone()[0]
-        
-        if order_count > 0:
-            conn.close()
-            return False  # 有订单使用，不能删除
-        
-        cursor.execute("DELETE FROM bag_types WHERE id=?", (bag_type_id,))
-        success = cursor.rowcount > 0
-        conn.commit()
-        conn.close()
-        return success
+
     
     # 库存管理
     def add_inventory_item(self, product_name: str, description: str = "", 
@@ -788,15 +607,14 @@ class DatabaseManager:
         cursor = conn.cursor()
         
         inventory_id = kwargs.get('inventory_id')
-        bag_type_id = kwargs.get('bag_type_id')
         outer_fabric_id = kwargs.get('outer_fabric_id')
         inner_fabric_id = kwargs.get('inner_fabric_id')
         
         cursor.execute(
             """INSERT INTO order_items 
-               (order_id, item_type, inventory_id, bag_type_id, outer_fabric_id, inner_fabric_id, quantity, unit_price, notes) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (order_id, item_type, inventory_id, bag_type_id, outer_fabric_id, inner_fabric_id, quantity, unit_price, notes)
+               (order_id, item_type, inventory_id, outer_fabric_id, inner_fabric_id, quantity, unit_price, notes) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (order_id, item_type, inventory_id, outer_fabric_id, inner_fabric_id, quantity, unit_price, notes)
         )
         
         item_id = cursor.lastrowid
@@ -823,7 +641,7 @@ class DatabaseManager:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT o.*, c.nickname as customer_name
+            SELECT o.*, c.nickname as customer_name, c.phone_suffix as customer_phone_suffix
             FROM orders o
             LEFT JOIN customers c ON o.customer_id = c.id
             ORDER BY o.created_at DESC
@@ -834,7 +652,7 @@ class DatabaseManager:
             orders.append({
                 'id': row[0], 'customer_id': row[1], 'total_amount': row[2],
                 'status': row[3], 'notes': row[4], 'image_path': row[5], 'created_at': row[6], 'updated_at': row[7],
-                'customer_name': row[8]
+                'customer_name': row[8], 'customer_phone_suffix': row[9]
             })
         conn.close()
         return orders
@@ -912,7 +730,7 @@ class DatabaseManager:
         # 获取分页数据
         offset = (page - 1) * page_size
         data_query = f"""
-            SELECT o.*, c.nickname as customer_name
+            SELECT o.*, c.nickname as customer_name, c.phone_suffix as customer_phone_suffix
             FROM orders o
             LEFT JOIN customers c ON o.customer_id = c.id
             {where_clause}
@@ -926,7 +744,7 @@ class DatabaseManager:
             orders.append({
                 'id': row[0], 'customer_id': row[1], 'total_amount': row[2],
                 'status': row[3], 'notes': row[4], 'image_path': row[5], 'created_at': row[6], 'updated_at': row[7],
-                'customer_name': row[8]
+                'customer_name': row[8], 'customer_phone_suffix': row[9]
             })
         
         conn.close()
@@ -942,7 +760,7 @@ class DatabaseManager:
         
         placeholders = ','.join(['?' for _ in order_ids])
         cursor.execute(f"""
-            SELECT o.*, c.nickname as customer_name
+            SELECT o.*, c.nickname as customer_name, c.phone_suffix as customer_phone_suffix
             FROM orders o
             LEFT JOIN customers c ON o.customer_id = c.id
             WHERE o.id IN ({placeholders})
@@ -954,7 +772,7 @@ class DatabaseManager:
             orders.append({
                 'id': row[0], 'customer_id': row[1], 'total_amount': row[2],
                 'status': row[3], 'notes': row[4], 'image_path': row[5], 'created_at': row[6], 'updated_at': row[7],
-                'customer_name': row[8]
+                'customer_name': row[8], 'customer_phone_suffix': row[9]
             })
         
         conn.close()
@@ -988,13 +806,13 @@ class DatabaseManager:
         
         # 获取所有订单的商品信息
         cursor.execute(f"""
-            SELECT oi.*, i.product_name as inventory_name, bt.name as bag_type_name,
-                   f1.name as outer_fabric_name, f2.name as inner_fabric_name
+            SELECT oi.*, i.product_name as inventory_name,
+                   of.name as outer_fabric_name,
+                   if.name as inner_fabric_name
             FROM order_items oi
             LEFT JOIN inventory i ON oi.inventory_id = i.id
-            LEFT JOIN bag_types bt ON oi.bag_type_id = bt.id
-            LEFT JOIN fabrics f1 ON oi.outer_fabric_id = f1.id
-            LEFT JOIN fabrics f2 ON oi.inner_fabric_id = f2.id
+            LEFT JOIN fabrics of ON oi.outer_fabric_id = of.id
+            LEFT JOIN fabrics if ON oi.inner_fabric_id = if.id
             WHERE oi.order_id IN ({placeholders})
             ORDER BY oi.order_id, oi.id
         """, order_ids)
@@ -1004,10 +822,9 @@ class DatabaseManager:
             if order_id in orders_dict:
                 orders_dict[order_id]['items'].append({
                     'id': row[0], 'order_id': row[1], 'item_type': row[2],
-                    'inventory_id': row[3], 'bag_type_id': row[4], 'outer_fabric_id': row[5],
-                    'inner_fabric_id': row[6], 'quantity': row[7], 'unit_price': row[8],
-                    'notes': row[9], 'inventory_name': row[10], 'bag_type_name': row[11],
-                    'outer_fabric_name': row[12], 'inner_fabric_name': row[13]
+                    'inventory_id': row[3], 'quantity': row[4], 'unit_price': row[5],
+                    'notes': row[6], 'inventory_name': row[7],
+                    'outer_fabric_name': row[8], 'inner_fabric_name': row[9]
                 })
         
         conn.close()
@@ -1018,13 +835,13 @@ class DatabaseManager:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT oi.*, i.product_name as inventory_name, bt.name as bag_type_name,
-                   f1.name as outer_fabric_name, f2.name as inner_fabric_name
+            SELECT oi.*, i.product_name as inventory_name,
+                   of.name as outer_fabric_name,
+                   if.name as inner_fabric_name
             FROM order_items oi
             LEFT JOIN inventory i ON oi.inventory_id = i.id
-            LEFT JOIN bag_types bt ON oi.bag_type_id = bt.id
-            LEFT JOIN fabrics f1 ON oi.outer_fabric_id = f1.id
-            LEFT JOIN fabrics f2 ON oi.inner_fabric_id = f2.id
+            LEFT JOIN fabrics of ON oi.outer_fabric_id = of.id
+            LEFT JOIN fabrics if ON oi.inner_fabric_id = if.id
             WHERE oi.order_id = ?
         """, (order_id,))
         
@@ -1032,10 +849,9 @@ class DatabaseManager:
         for row in cursor.fetchall():
             items.append({
                 'id': row[0], 'order_id': row[1], 'item_type': row[2],
-                'inventory_id': row[3], 'bag_type_id': row[4], 'outer_fabric_id': row[5],
-                'inner_fabric_id': row[6], 'quantity': row[7], 'unit_price': row[8], 'notes': row[9],
-                'inventory_name': row[10], 'bag_type_name': row[11],
-                'outer_fabric_name': row[12], 'inner_fabric_name': row[13]
+                'inventory_id': row[3], 'outer_fabric_id': row[4], 'inner_fabric_id': row[5],
+                'quantity': row[6], 'unit_price': row[7], 'notes': row[8],
+                'inventory_name': row[9], 'outer_fabric_name': row[10], 'inner_fabric_name': row[11]
             })
         conn.close()
         return items

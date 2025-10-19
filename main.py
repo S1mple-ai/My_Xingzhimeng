@@ -6,7 +6,6 @@ from streamlit_option_menu import option_menu
 import plotly.express as px
 import plotly.graph_objects as go
 from upload_components import drag_drop_image_uploader, drag_drop_media_uploader, display_uploaded_media
-from category_management import render_category_management
 from ui_components import (
     show_loading_spinner, show_progress_bar, show_success_message, 
     show_error_message, show_warning_message, create_metric_card,
@@ -233,8 +232,8 @@ with st.sidebar:
     st.markdown("### 📋 系统导航")
     selected = option_menu(
         menu_title=None,
-        options=["📊 仪表板", "👥 客户管理", "🧵 面料管理", "👜 包型管理", "📦 库存管理", "📋 订单管理", "⚙️ 系统设置"],
-        icons=["graph-up", "people", "palette", "bag", "box", "clipboard-check", "gear"],
+        options=["📊 仪表板", "👥 客户管理", "🧵 面料管理", "📦 库存管理", "📋 订单管理", "⚙️ 系统设置"],
+        icons=["graph-up", "people", "palette", "box", "clipboard-check", "gear"],
         menu_icon="cast",
         default_index=0,
         styles={
@@ -256,7 +255,6 @@ if selected == "📊 仪表板":
         orders = db.get_orders()
         inventory_items = db.get_inventory_items()
         fabrics = db.get_fabrics()
-        bag_types = db.get_bag_types()
     
     # 显示关键指标 - 使用新的UI组件
     col1, col2, col3, col4 = st.columns(4)
@@ -459,7 +457,7 @@ elif selected == "👥 客户管理":
                     
                     with col2:
                         new_notes = st.text_area("备注", value=customer['notes'] or "", key=f"notes_{customer['id']}")
-                        new_points = st.number_input("积分", value=customer['points'], key=f"points_{customer['id']}")
+                        new_points = st.number_input("积分", value=customer['points'], min_value=0, step=1, key=f"points_{customer['id']}", format="%d")
                     
                     with col3:
                         if create_action_button("💾 更新", f"update_{customer['id']}", "primary"):
@@ -689,192 +687,6 @@ elif selected == "🧵 面料管理":
                 else:
                     show_error_message("请输入面料名称")
 
-# 包型管理页面
-elif selected == "👜 包型管理":
-    st.markdown("## 👜 包型管理")
-    
-    # 初始化编辑状态
-    if 'bag_type_edit_states' not in st.session_state:
-        st.session_state.bag_type_edit_states = {}
-    
-    tab1, tab2, tab3 = st.tabs(["📋 包型列表", "🗂️ 分类管理", "➕ 添加包型"])
-    
-    with tab1:
-        st.markdown("### 📋 包型列表")
-        bag_types = db.get_bag_types()
-        
-        if bag_types:
-            for bag_type in bag_types:
-                with st.expander(f"👜 {bag_type['name']} - ¥{bag_type['price']:.2f}"):
-                    # 显示媒体文件
-                    if bag_type['image_path'] or bag_type['video_path']:
-                        display_uploaded_media(
-                            image_path=bag_type['image_path'], 
-                            video_path=bag_type['video_path']
-                        )
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.write(f"**大分类:** {bag_type['category_name'] or '未分类'}")
-                        st.write(f"**子分类:** {bag_type['subcategory_name'] or '无'}")
-                        st.write(f"**价格:** ¥{bag_type['price']:.2f}")
-                    
-                    with col2:
-                        if bag_type['image_path']:
-                            st.write(f"**图片路径:** {bag_type['image_path']}")
-                        if bag_type['video_path']:
-                            st.write(f"**视频路径:** {bag_type['video_path']}")
-                    
-                    # 编辑和删除按钮
-                    col_edit, col_delete = st.columns(2)
-                    
-                    with col_edit:
-                        edit_button = st.button("✏️ 编辑", key=f"edit_bag_type_{bag_type['id']}", use_container_width=True)
-                    
-                    with col_delete:
-                        if st.button("🗑️ 删除", key=f"delete_bag_type_{bag_type['id']}", use_container_width=True):
-                            if db.delete_bag_type(bag_type['id']):
-                                st.success(f"✅ 包型 \"{bag_type['name']}\" 删除成功！")
-                                st.rerun()
-                            else:
-                                st.error("❌ 无法删除该包型，可能有订单正在使用")
-                    
-                    # 处理编辑状态
-                    bag_type_id = bag_type['id']
-                    if edit_button:
-                        st.session_state.bag_type_edit_states[bag_type_id] = True
-                    
-                    # 编辑表单
-                    if st.session_state.bag_type_edit_states.get(bag_type_id, False):
-                        st.markdown("---")
-                        st.markdown("#### ✏️ 编辑包型")
-                        
-                        with st.form(f"edit_bag_type_form_{bag_type['id']}"):
-                            edit_col1, edit_col2 = st.columns(2)
-                            
-                            with edit_col1:
-                                edit_name = st.text_input("包型名称", value=bag_type['name'])
-                                edit_price = st.number_input("价格", value=float(bag_type['price']), min_value=0.0, step=0.01, format="%.2f")
-                                
-                                # 获取分类选项
-                                categories = db.get_bag_categories()
-                                main_categories = [cat for cat in categories if cat['level'] == 1]
-                                category_names = [cat['name'] for cat in main_categories]
-                                
-                                current_category_name = bag_type['category_name'] or ""
-                                category_index = category_names.index(current_category_name) if current_category_name in category_names else 0
-                                edit_category_choice = st.selectbox("大分类", category_names, index=category_index)
-                            
-                            with edit_col2:
-                                # 子分类选择
-                                selected_main_category = next((cat for cat in main_categories if cat['name'] == edit_category_choice), None)
-                                subcategories = []
-                                if selected_main_category:
-                                    subcategories = [cat for cat in categories if cat['parent_id'] == selected_main_category['id']]
-                                
-                                subcategory_names = ["无"] + [cat['name'] for cat in subcategories]
-                                current_subcategory_name = bag_type['subcategory_name'] or "无"
-                                subcategory_index = subcategory_names.index(current_subcategory_name) if current_subcategory_name in subcategory_names else 0
-                                edit_subcategory_choice = st.selectbox("子分类", subcategory_names, index=subcategory_index)
-                            
-                            # 媒体文件上传
-                            st.markdown("##### 📸 更新图片")
-                            edit_uploaded_file, edit_image_path = drag_drop_image_uploader(f"edit_bag_image_{bag_type['id']}", "包型图片（可选）")
-                            
-                            st.markdown("##### 🎥 更新视频")
-                            edit_video_file, edit_video_path = drag_drop_media_uploader(f"edit_bag_video_{bag_type['id']}", "包型视频（可选）")
-                            
-                            # 保存和取消按钮
-                            save_col, cancel_col = st.columns(2)
-                            
-                            with save_col:
-                                if st.form_submit_button("💾 保存修改", use_container_width=True):
-                                    # 获取分类ID
-                                    category_id = selected_main_category['id'] if selected_main_category else None
-                                    subcategory_id = None
-                                    if edit_subcategory_choice != "无":
-                                        subcategory_id = next((cat['id'] for cat in subcategories if cat['name'] == edit_subcategory_choice), None)
-                                    
-                                    # 使用新上传的文件路径，如果没有则保持原有路径
-                                    final_image_path = edit_image_path if edit_image_path else bag_type['image_path']
-                                    final_video_path = edit_video_path if edit_video_path else bag_type['video_path']
-                                    
-                                    if db.update_bag_type(bag_type['id'], edit_name, category_id, subcategory_id, edit_price, final_image_path, final_video_path):
-                                        st.success(f"✅ 包型 \"{edit_name}\" 更新成功！")
-                                        st.session_state.bag_type_edit_states[bag_type_id] = False
-                                        st.rerun()
-                                    else:
-                                        st.error("❌ 更新失败")
-                            
-                            with cancel_col:
-                                if st.form_submit_button("❌ 取消", use_container_width=True):
-                                    st.session_state.bag_type_edit_states[bag_type_id] = False
-                                    st.rerun()
-        else:
-            st.info("📝 暂无包型数据，请先创建分类并添加包型")
-    
-    with tab2:
-        render_category_management(db)
-    
-    with tab3:
-        st.markdown("### ➕ 添加新包型")
-        
-        categories = db.get_bag_categories()
-        
-        if not categories:
-            st.warning("⚠️ 请先在分类管理中创建包型分类")
-        else:
-            with st.form("add_bag_type_form"):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    name = st.text_input("👜 包型名称*", placeholder="请输入包型名称")
-                    price = st.number_input("💰 价格*", min_value=0.0, step=0.01, format="%.2f")
-                    
-                    # 大分类选择
-                    main_categories = [cat for cat in categories if cat['level'] == 1]
-                    category_names = [cat['name'] for cat in main_categories]
-                    category_choice = st.selectbox("🗂️ 大分类*", category_names)
-                
-                with col2:
-                    # 子分类选择
-                    selected_category = next((cat for cat in main_categories if cat['name'] == category_choice), None)
-                    subcategories = db.get_bag_categories(selected_category['id']) if selected_category else []
-                    
-                    if subcategories:
-                        subcategory_options = ["无"] + [subcat['name'] for subcat in subcategories]
-                        subcategory_choice = st.selectbox("📂 子分类", subcategory_options)
-                    else:
-                        subcategory_choice = "无"
-                        st.info("该分类下暂无子分类")
-                
-                # 媒体文件上传区域
-                st.markdown("---")
-                media_uploads = drag_drop_media_uploader(
-                    key="bag_type_media", 
-                    label="📁 包型媒体文件", 
-                    help_text="支持拖拽上传图片和视频文件"
-                )
-                
-                submitted = st.form_submit_button("➕ 添加包型", use_container_width=True)
-                
-                if submitted:
-                    if name and selected_category:
-                        subcategory_id = None
-                        if subcategory_choice != "无":
-                            subcategory_id = next((subcat['id'] for subcat in subcategories if subcat['name'] == subcategory_choice), None)
-                        
-                        # 获取上传的文件路径
-                        image_path = media_uploads["image"][1]  # 获取图片路径
-                        video_path = media_uploads["video"][1]  # 获取视频路径
-                        
-                        bag_type_id = db.add_bag_type(name, selected_category['id'], subcategory_id, price, image_path, video_path)
-                        st.markdown(f'<div class="success-message">✅ 包型 "{name}" 添加成功！</div>', unsafe_allow_html=True)
-                        st.rerun()
-                    else:
-                        st.markdown('<div class="error-message">❌ 请填写必填项</div>', unsafe_allow_html=True)
-
 # 库存管理页面
 elif selected == "📦 库存管理":
     st.markdown("## 📦 库存管理")
@@ -985,8 +797,8 @@ elif selected == "📦 库存管理":
                     
                     with col2:
                         new_price = st.number_input("价格", value=float(item['price']), min_value=0.0, step=0.01, key=f"item_price_{item['id']}")
-                        quantity_change = st.number_input("库存调整", value=0, step=1, key=f"item_qty_{item['id']}", 
-                                                        help="正数增加库存，负数减少库存")
+                        quantity_change = st.number_input("库存调整", value=0, min_value=-1000, max_value=1000, step=1, key=f"item_qty_{item['id']}", 
+                                                        help="正数增加库存，负数减少库存", format="%d")
                         new_image = st.text_input("图片路径", value=item['image_path'] or "", key=f"item_image_{item['id']}")
                     
                     with col3:
@@ -1026,7 +838,7 @@ elif selected == "📦 库存管理":
             
             with col2:
                 price = st.number_input("💰 价格*", min_value=0.0, step=0.01, format="%.2f")
-                quantity = st.number_input("📊 初始库存*", min_value=0, step=1)
+                quantity = st.number_input("📊 初始库存*", min_value=0, step=1, format="%d")
             
             submitted = st.form_submit_button("➕ 添加商品", use_container_width=True)
             
@@ -1185,8 +997,10 @@ elif selected == "📋 订单管理":
                         st.rerun()
             
             with col3:
-                # CSV导出
+                # 导出功能
                 st.markdown(f"**已选择: {selected_count} 个**")
+                
+                # CSV导出
                 if st.button("📊 导出CSV", use_container_width=True, disabled=selected_count == 0):
                     if selected_count > 0:
                         try:
@@ -1213,6 +1027,44 @@ elif selected == "📋 订单管理":
                             st.success(f"✅ 已生成 {selected_count} 个订单的CSV文件")
                         except Exception as e:
                             st.error(f"❌ CSV导出失败: {str(e)}")
+                
+                # PDF导出
+                if st.button("📄 导出PDF", use_container_width=True, disabled=selected_count == 0):
+                    if selected_count > 0:
+                        try:
+                            from pdf_export import export_orders_to_pdf
+                            from datetime import datetime
+                            
+                            # 获取选中订单的数据
+                            selected_order_ids = list(st.session_state.selected_orders)
+                            orders = db.get_orders_by_ids(selected_order_ids)
+                            
+                            # 获取订单项数据
+                            order_items_dict = {}
+                            for order_id in selected_order_ids:
+                                items = db.get_order_items(order_id)
+                                order_items_dict[order_id] = items
+                            
+                            # 生成PDF
+                            pdf_data = export_orders_to_pdf(orders, order_items_dict)
+                            
+                            # 生成文件名
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            pdf_filename = f"订单详情_{timestamp}.pdf"
+                            
+                            # 提供下载
+                            st.download_button(
+                                label="💾 下载PDF文件",
+                                data=pdf_data,
+                                file_name=pdf_filename,
+                                mime="application/pdf",
+                                use_container_width=True,
+                                key="download_pdf_btn"
+                            )
+                            
+                            st.success(f"✅ 已生成 {selected_count} 个订单的PDF文件")
+                        except Exception as e:
+                            st.error(f"❌ PDF导出失败: {str(e)}")
             
             with col4:
                 # 批量删除
@@ -1353,11 +1205,11 @@ elif selected == "📋 订单管理":
                                 for item in order_items:
                                     if item['item_type'] == '现货':
                                         st.write(f"• 现货: {item['inventory_name']} × {item['quantity']} = ¥{item['unit_price'] * item['quantity']:.2f}")
-                                    else:
-                                        st.write(f"• 定制: {item['bag_type_name']} × {item['quantity']} = ¥{item['unit_price'] * item['quantity']:.2f}")
-                                        if item['outer_fabric_name']:
+                                    else:  # 定制商品
+                                        st.write(f"• 定制: {item['inventory_name']} × {item['quantity']} = ¥{item['unit_price'] * item['quantity']:.2f}")
+                                        if item.get('outer_fabric_name'):
                                             st.write(f"  表布: {item['outer_fabric_name']}")
-                                        if item['inner_fabric_name']:
+                                        if item.get('inner_fabric_name'):
                                             st.write(f"  里布: {item['inner_fabric_name']}")
                                     if item['notes']:
                                         st.write(f"  备注: {item['notes']}")
@@ -1441,99 +1293,99 @@ elif selected == "📋 订单管理":
             if 'order_items' not in st.session_state:
                 st.session_state.order_items = []
             
-            # 商品类型选择
-            item_type = st.radio("商品类型", ["现货", "定制"], horizontal=True)
+            # 添加现货商品
+            inventory_items = db.get_inventory_items()
+            available_items = [item for item in inventory_items if item['quantity'] > 0]
             
-            if item_type == "现货":
-                inventory_items = db.get_inventory_items()
-                available_items = [item for item in inventory_items if item['quantity'] > 0]
+            if available_items:
+                col1, col2, col3 = st.columns([3, 1, 1])
                 
-                if available_items:
-                    col1, col2, col3 = st.columns([3, 1, 1])
-                    
-                    with col1:
-                        item_options = [f"{item['product_name']} (库存: {item['quantity']}, ¥{item['price']:.2f})" for item in available_items]
-                        selected_item = st.selectbox("选择现货商品", item_options)
-                        item_index = item_options.index(selected_item)
-                        selected_inventory = available_items[item_index]
-                    
-                    with col2:
-                        quantity = st.number_input("数量", min_value=1, max_value=selected_inventory['quantity'], value=1)
-                    
-                    with col3:
-                        if st.button("➕ 添加到订单"):
-                            order_item = {
-                                'type': '现货',
-                                'inventory_id': selected_inventory['id'],
-                                'name': selected_inventory['product_name'],
-                                'quantity': quantity,
-                                'unit_price': selected_inventory['price'],
-                                'total_price': selected_inventory['price'] * quantity
-                            }
-                            st.session_state.order_items.append(order_item)
-                            st.success("✅ 商品已添加到订单")
-                else:
-                    st.warning("⚠️ 暂无可用现货商品")
+                with col1:
+                    item_options = [f"{item['product_name']} (库存: {item['quantity']}, ¥{item['price']:.2f})" for item in available_items]
+                    selected_item = st.selectbox("选择现货商品", item_options)
+                    item_index = item_options.index(selected_item)
+                    selected_inventory = available_items[item_index]
+                
+                with col2:
+                    quantity = st.number_input("数量", min_value=1, max_value=selected_inventory['quantity'], value=1, step=1, format="%d")
+                
+                with col3:
+                    if st.button("➕ 添加到订单"):
+                        order_item = {
+                            'type': '现货',
+                            'inventory_id': selected_inventory['id'],
+                            'name': selected_inventory['product_name'],
+                            'quantity': quantity,
+                            'unit_price': selected_inventory['price'],
+                            'total_price': selected_inventory['price'] * quantity
+                        }
+                        st.session_state.order_items.append(order_item)
+                        st.success("✅ 商品已添加到订单")
+            else:
+                st.warning("⚠️ 暂无可用现货商品")
             
-            else:  # 定制商品
-                bag_types = db.get_bag_types()
-                fabrics = db.get_fabrics()
+            # 添加定制商品
+            st.markdown("---")
+            st.markdown("##### 🎨 添加定制商品")
+            
+            # 获取面料数据
+            fabrics = db.get_fabrics()
+            
+            if available_items and fabrics:
+                col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 1, 1])
                 
-                if not bag_types:
-                    st.warning("⚠️ 请先在包型管理中添加包型")
-                else:
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        # 选择包型
-                        bag_options = [f"{bag['name']} - ¥{bag['price']:.2f}" for bag in bag_types]
-                        selected_bag = st.selectbox("选择包型", bag_options)
-                        bag_index = bag_options.index(selected_bag)
-                        selected_bag_type = bag_types[bag_index]
-                        
-                        # 选择表布
-                        outer_fabrics = [fabric for fabric in fabrics if fabric['usage_type'] == '表布']
-                        if outer_fabrics:
-                            outer_fabric_options = [fabric['name'] for fabric in outer_fabrics]
-                            selected_outer_fabric = st.selectbox("选择表布", outer_fabric_options)
-                            outer_fabric_id = next(fabric['id'] for fabric in outer_fabrics if fabric['name'] == selected_outer_fabric)
-                        else:
-                            st.warning("⚠️ 请先添加表布面料")
-                            outer_fabric_id = None
-                    
-                    with col2:
-                        # 选择里布
-                        inner_fabrics = [fabric for fabric in fabrics if fabric['usage_type'] == '里布']
-                        if inner_fabrics:
-                            inner_fabric_options = [fabric['name'] for fabric in inner_fabrics]
-                            selected_inner_fabric = st.selectbox("选择里布", inner_fabric_options)
-                            inner_fabric_id = next(fabric['id'] for fabric in inner_fabrics if fabric['name'] == selected_inner_fabric)
-                        else:
-                            st.warning("⚠️ 请先添加里布面料")
-                            inner_fabric_id = None
-                        
-                        quantity = st.number_input("数量", min_value=1, value=1)
-                        custom_notes = st.text_input("定制备注", placeholder="特殊要求等")
-                    
-                    if st.button("➕ 添加定制商品到订单"):
-                        if outer_fabric_id and inner_fabric_id:
-                            order_item = {
-                                'type': '定制',
-                                'bag_type_id': selected_bag_type['id'],
-                                'name': f"定制 {selected_bag_type['name']}",
-                                'outer_fabric_id': outer_fabric_id,
-                                'outer_fabric_name': selected_outer_fabric,
-                                'inner_fabric_id': inner_fabric_id,
-                                'inner_fabric_name': selected_inner_fabric,
-                                'quantity': quantity,
-                                'unit_price': selected_bag_type['price'],
-                                'total_price': selected_bag_type['price'] * quantity,
-                                'notes': custom_notes
-                            }
-                            st.session_state.order_items.append(order_item)
-                            st.success("✅ 定制商品已添加到订单")
-                        else:
-                            st.error("❌ 请选择表布和里布")
+                with col1:
+                    # 选择基础商品
+                    custom_item_options = [f"{item['product_name']} (¥{item['price']:.2f})" for item in available_items]
+                    selected_custom_item = st.selectbox("选择基础商品", custom_item_options, key="custom_base_item")
+                    custom_item_index = custom_item_options.index(selected_custom_item)
+                    selected_custom_inventory = available_items[custom_item_index]
+                
+                with col2:
+                    # 选择表布
+                    outer_fabric_options = [f"{fabric['name']} ({fabric['material_type']})" for fabric in fabrics]
+                    selected_outer_fabric = st.selectbox("选择表布", outer_fabric_options, key="outer_fabric")
+                    outer_fabric_index = outer_fabric_options.index(selected_outer_fabric)
+                    selected_outer_fabric_data = fabrics[outer_fabric_index]
+                
+                with col3:
+                    # 选择里布
+                    inner_fabric_options = [f"{fabric['name']} ({fabric['material_type']})" for fabric in fabrics]
+                    selected_inner_fabric = st.selectbox("选择里布", inner_fabric_options, key="inner_fabric")
+                    inner_fabric_index = inner_fabric_options.index(selected_inner_fabric)
+                    selected_inner_fabric_data = fabrics[inner_fabric_index]
+                
+                with col4:
+                    custom_quantity = st.number_input("数量", min_value=1, value=1, step=1, format="%d", key="custom_quantity")
+                
+                with col5:
+                    price_value = selected_custom_inventory['price'] if selected_custom_inventory['price'] is not None else 0
+                    custom_price = st.number_input("定制价格", min_value=0.0, value=float(price_value), step=0.01, format="%.2f", key="custom_price")
+                
+                # 定制商品备注
+                custom_notes = st.text_area("定制备注", placeholder="特殊要求、工艺说明等", key="custom_notes")
+                
+                if st.button("🎨 添加定制商品到订单"):
+                    custom_order_item = {
+                        'type': '定制',
+                        'inventory_id': selected_custom_inventory['id'],
+                        'outer_fabric_id': selected_outer_fabric_data['id'],
+                        'inner_fabric_id': selected_inner_fabric_data['id'],
+                        'name': f"定制-{selected_custom_inventory['product_name']}",
+                        'outer_fabric_name': selected_outer_fabric_data['name'],
+                        'inner_fabric_name': selected_inner_fabric_data['name'],
+                        'quantity': custom_quantity,
+                        'unit_price': custom_price,
+                        'total_price': custom_price * custom_quantity,
+                        'notes': custom_notes
+                    }
+                    st.session_state.order_items.append(custom_order_item)
+                    st.success("✅ 定制商品已添加到订单")
+            else:
+                if not available_items:
+                    st.warning("⚠️ 暂无可用商品作为定制基础")
+                if not fabrics:
+                    st.warning("⚠️ 暂无可用面料，请先添加面料")
             
             # 显示当前订单商品
             if st.session_state.order_items:
@@ -1545,9 +1397,9 @@ elif selected == "📋 订单管理":
                     
                     with col1:
                         if item['type'] == '现货':
-                            st.write(f"• {item['name']} × {item['quantity']} = ¥{item['total_price']:.2f}")
-                        else:
-                            st.write(f"• {item['name']} × {item['quantity']} = ¥{item['total_price']:.2f}")
+                            st.write(f"• 现货: {item['name']} × {item['quantity']} = ¥{item['total_price']:.2f}")
+                        else:  # 定制商品
+                            st.write(f"• 定制: {item['name']} × {item['quantity']} = ¥{item['total_price']:.2f}")
                             st.write(f"  表布: {item['outer_fabric_name']}, 里布: {item['inner_fabric_name']}")
                             if item.get('notes'):
                                 st.write(f"  备注: {item['notes']}")
@@ -1584,11 +1436,11 @@ elif selected == "📋 订单管理":
                                     order_id, '现货', item['quantity'], item['unit_price'],
                                     inventory_id=item['inventory_id']
                                 )
-                            else:
+                            else:  # 定制商品
                                 db.add_order_item(
                                     order_id, '定制', item['quantity'], item['unit_price'],
                                     notes=item.get('notes', ''),
-                                    bag_type_id=item['bag_type_id'],
+                                    inventory_id=item['inventory_id'],
                                     outer_fabric_id=item['outer_fabric_id'],
                                     inner_fabric_id=item['inner_fabric_id']
                                 )
@@ -1636,7 +1488,7 @@ elif selected == "⚙️ 系统设置":
             backup_manager = AutoBackup(db)
             
             # 检查今日备份状态
-            data_types = ["customers", "fabrics", "bag_types", "orders", "inventory"]
+            data_types = ["customers", "fabrics", "orders", "inventory"]
             backup_status = {}
             for data_type in data_types:
                 backup_status[data_type] = backup_manager.is_backup_exists_today(data_type)
@@ -1646,7 +1498,6 @@ elif selected == "⚙️ 系统设置":
                 type_names = {
                     "customers": "👥 客户数据",
                     "fabrics": "🧵 面料数据", 
-                    "bag_types": "👜 包型数据",
                     "orders": "📋 订单数据",
                     "inventory": "📦 库存数据"
                 }
@@ -1713,13 +1564,11 @@ elif selected == "⚙️ 系统设置":
             orders = db.get_orders()
             inventory_items = db.get_inventory_items()
             fabrics = db.get_fabrics()
-            bag_types = db.get_bag_types()
             
             st.metric("👥 客户总数", len(customers))
             st.metric("📋 订单总数", len(orders))
             st.metric("📦 库存商品", len(inventory_items))
             st.metric("🧵 面料种类", len(fabrics))
-            st.metric("👜 包型种类", len(bag_types))
         
         with col2:
             st.markdown("#### 💾 数据库信息")

@@ -13,7 +13,7 @@ def comprehensive_database_check():
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
     tables = cursor.fetchall()
     
-    expected_tables = ['customers', 'fabrics', 'bag_categories', 'bag_types', 'inventory', 'orders', 'order_items']
+    expected_tables = ['customers', 'fabrics', 'inventory', 'orders', 'order_items']
     existing_tables = [table[0] for table in tables if table[0] != 'sqlite_sequence']
     
     print(f"   发现表: {existing_tables}")
@@ -36,7 +36,7 @@ def comprehensive_database_check():
     cursor.execute("PRAGMA table_info(order_items);")
     order_items_columns = [col[1] for col in cursor.fetchall()]
     
-    expected_fk_columns = ['order_id', 'inventory_id', 'bag_type_id', 'outer_fabric_id', 'inner_fabric_id']
+    expected_fk_columns = ['order_id', 'inventory_id']
     missing_fk = [col for col in expected_fk_columns if col not in order_items_columns]
     
     if missing_fk:
@@ -52,9 +52,6 @@ def comprehensive_database_check():
         ("orders", "customer_id", "customers", "id"),
         ("order_items", "order_id", "orders", "id"),
         ("order_items", "inventory_id", "inventory", "id"),
-        ("order_items", "bag_type_id", "bag_types", "id"),
-        ("order_items", "outer_fabric_id", "fabrics", "id"),
-        ("order_items", "inner_fabric_id", "fabrics", "id"),
     ]
     
     for child_table, child_col, parent_table, parent_col in checks:

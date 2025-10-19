@@ -1,0 +1,112 @@
+{
+  "backup_date": "2025-10-19",
+  "backup_time": "2025-10-19 13:20:07",
+  "data_type": "bag_types",
+  "count": 8,
+  "data": [
+    {
+      "id": 9,
+      "name": "多格斜挎",
+      "category_id": 11,
+      "subcategory_id": null,
+      "price": 88,
+      "image_path": null,
+      "video_path": null,
+      "created_at": "2025-10-16 17:11:43",
+      "updated_at": "2025-10-16 17:11:43",
+      "category_name": "斜挎包",
+      "subcategory_name": null
+    },
+    {
+      "id": 8,
+      "name": "爱心挂件",
+      "category_id": 9,
+      "subcategory_id": null,
+      "price": 28,
+      "image_path": null,
+      "video_path": null,
+      "created_at": "2025-10-14 12:47:50",
+      "updated_at": "2025-10-14 12:47:50",
+      "category_name": "挂件",
+      "subcategory_name": null
+    },
+    {
+      "id": 7,
+      "name": "迷你双肩包",
+      "category_id": 8,
+      "subcategory_id": null,
+      "price": 98,
+      "image_path": null,
+      "video_path": null,
+      "created_at": "2025-10-14 12:47:01",
+      "updated_at": "2025-10-14 12:47:01",
+      "category_name": "双肩包",
+      "subcategory_name": null
+    },
+    {
+      "id": 6,
+      "name": "笔袋",
+      "category_id": 1,
+      "subcategory_id": 7,
+      "price": 45,
+      "image_path": null,
+      "video_path": null,
+      "created_at": "2025-10-14 12:46:30",
+      "updated_at": "2025-10-14 12:46:30",
+      "category_name": "收纳包",
+      "subcategory_name": "笔袋"
+    },
+    {
+      "id": 5,
+      "name": "大号衣物收纳",
+      "category_id": 1,
+      "subcategory_id": null,
+      "price": 98,
+      "image_path": null,
+      "video_path": "video",
+      "created_at": "2025-10-14 12:46:08",
+      "updated_at": "2025-10-16 16:59:05",
+      "category_name": "收纳包",
+      "subcategory_name": null
+    },
+    {
+      "id": 4,
+      "name": "大豆腐",
+      "category_id": 1,
+      "subcategory_id": 2,
+      "price": 48,
+      "image_path": null,
+      "video_path": null,
+      "created_at": "2025-10-14 12:45:25",
+      "updated_at": "2025-10-14 12:45:25",
+      "category_name": "收纳包",
+      "subcategory_name": "豆腐包"
+    },
+    {
+      "id": 3,
+      "name": "中豆腐",
+      "category_id": 1,
+      "subcategory_id": 2,
+      "price": 38,
+      "image_path": null,
+      "video_path": null,
+      "created_at": "2025-10-14 12:45:20",
+      "updated_at": "2025-10-14 12:45:20",
+      "category_name": "收纳包",
+      "subcategory_name": "豆腐包"
+    },
+    {
+      "id": 2,
+      "name": "小豆腐",
+      "category_id": 1,
+      "subcategory_id": 2,
+      "price": 36,
+      "image_path": null,
+      "video_path": null,
+      "created_at": "2025-10-14 10:57:46",
+      "updated_at": "2025-10-14 10:57:46",
+      "category_name": "收纳包",
+      "subcategory_name": "豆腐包"
+    }
+  ]
+}

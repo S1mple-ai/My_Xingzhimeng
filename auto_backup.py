@@ -86,27 +86,7 @@ class AutoBackup:
             st.error(f"❌ 面料数据备份失败: {str(e)}")
             return False
     
-    def backup_bag_types(self) -> bool:
-        """备份包型数据"""
-        try:
-            bag_types = self.db.get_bag_types()
-            filepath = self.get_backup_filepath("bag_types")
-            
-            backup_data = {
-                "backup_date": self.get_today_date(),
-                "backup_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "data_type": "bag_types",
-                "count": len(bag_types),
-                "data": bag_types
-            }
-            
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(backup_data, f, ensure_ascii=False, indent=2, default=str)
-            
-            return True
-        except Exception as e:
-            st.error(f"❌ 包型数据备份失败: {str(e)}")
-            return False
+
     
     def backup_orders(self) -> bool:
         """备份订单数据（包含订单项）"""
@@ -165,7 +145,7 @@ class AutoBackup:
     def perform_daily_backup(self) -> Dict[str, bool]:
         """执行每日备份"""
         backup_results = {}
-        data_types = ["customers", "fabrics", "bag_types", "orders", "inventory"]
+        data_types = ["customers", "fabrics", "orders", "inventory"]
         
         for data_type in data_types:
             # 检查今天是否已经备份
@@ -178,8 +158,6 @@ class AutoBackup:
                 backup_results[data_type] = self.backup_customers()
             elif data_type == "fabrics":
                 backup_results[data_type] = self.backup_fabrics()
-            elif data_type == "bag_types":
-                backup_results[data_type] = self.backup_bag_types()
             elif data_type == "orders":
                 backup_results[data_type] = self.backup_orders()
             elif data_type == "inventory":
@@ -190,7 +168,7 @@ class AutoBackup:
     def perform_force_backup(self) -> Dict[str, bool]:
         """强制执行完整备份（忽略今日是否已备份）"""
         backup_results = {}
-        data_types = ["customers", "fabrics", "bag_types", "orders", "inventory"]
+        data_types = ["customers", "fabrics", "orders", "inventory"]
         
         for data_type in data_types:
             # 强制执行备份，不检查今日是否已备份
@@ -198,8 +176,6 @@ class AutoBackup:
                 backup_results[data_type] = self.backup_customers()
             elif data_type == "fabrics":
                 backup_results[data_type] = self.backup_fabrics()
-            elif data_type == "bag_types":
-                backup_results[data_type] = self.backup_bag_types()
             elif data_type == "orders":
                 backup_results[data_type] = self.backup_orders()
             elif data_type == "inventory":
