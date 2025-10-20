@@ -6,32 +6,68 @@ import io
 from pathlib import Path
 import uuid
 
-def create_upload_directory():
-    """创建上传目录"""
+def create_upload_directory(category="general"):
+    """创建上传目录，按类别和日期组织"""
+    from datetime import datetime
+    
+    # 基础上传目录
     upload_dir = Path("uploads")
     upload_dir.mkdir(exist_ok=True)
     
-    # 创建子目录
-    (upload_dir / "images").mkdir(exist_ok=True)
-    (upload_dir / "videos").mkdir(exist_ok=True)
+    # 按日期创建子目录
+    today = datetime.now().strftime("%Y-%m")
+    date_dir = upload_dir / today
+    date_dir.mkdir(exist_ok=True)
     
-    return upload_dir
+    # 按类别创建子目录
+    category_dir = date_dir / category
+    category_dir.mkdir(exist_ok=True)
+    
+    return category_dir
 
-def save_uploaded_file(uploaded_file, file_type="image"):
-    """保存上传的文件"""
-    upload_dir = create_upload_directory()
+def generate_unique_filename(original_name, category="general"):
+    """生成唯一的文件名"""
+    from datetime import datetime
+    import hashlib
     
-    if file_type == "image":
-        save_path = upload_dir / "images" / uploaded_file.name
-    else:
-        save_path = upload_dir / "videos" / uploaded_file.name
+    # 获取文件扩展名
+    file_ext = Path(original_name).suffix.lower()
     
+    # 生成时间戳
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # 生成短哈希（基于原文件名）
+    hash_obj = hashlib.md5(original_name.encode())
+    short_hash = hash_obj.hexdigest()[:8]
+    
+    # 组合新文件名：类别_时间戳_哈希.扩展名
+    new_filename = f"{category}_{timestamp}_{short_hash}{file_ext}"
+    
+    return new_filename
+
+def save_uploaded_file(uploaded_file, file_type="image", category="general"):
+    """保存上传的文件，使用优化的路径结构"""
+    upload_dir = create_upload_directory(category)
+    
+    # 生成唯一文件名
+    unique_filename = generate_unique_filename(uploaded_file.name, category)
+    save_path = upload_dir / unique_filename
+    
+    # 确保文件不重复
+    counter = 1
+    while save_path.exists():
+        name_part = save_path.stem
+        ext_part = save_path.suffix
+        save_path = upload_dir / f"{name_part}_{counter}{ext_part}"
+        counter += 1
+    
+    # 保存文件
     with open(save_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
     
     return str(save_path)
 
-def drag_drop_image_uploader(key, label="上传图片", help_text="支持拖拽上传图片文件"):
+def drag_drop_image_uploader(key, label="上传图片", help_text="支持拖拽上传图片文件", category="general"):
     """
     拖拽式图片上传组件
     
@@ -39,6 +75,7 @@ def drag_drop_image_uploader(key, label="上传图片", help_text="支持拖拽�
         key: 组件的唯一标识符
         label: 显示标签
         help_text: 帮助文本
+        category: 文件分类（如 "fabric", "inventory", "order" 等）
     
     Returns:
         tuple: (uploaded_file, file_path)
@@ -119,7 +156,7 @@ def drag_drop_image_uploader(key, label="上传图片", help_text="支持拖拽�
             enhanced_image_preview(image, uploaded_file.name, f"upload_{key}")
             
             # 保存文件
-            file_path = save_uploaded_file(uploaded_file, "image")
+            file_path = save_uploaded_file(uploaded_file, "image", category)
             st.success(f"✅ 图片已保存: {file_path}")
             
         except Exception as e:
@@ -127,7 +164,7 @@ def drag_drop_image_uploader(key, label="上传图片", help_text="支持拖拽�
     
     return uploaded_file, file_path
 
-def drag_drop_video_uploader(key, label="上传视频", help_text="支持拖拽上传视频文件"):
+def drag_drop_video_uploader(key, label="上传视频", help_text="支持拖拽上传视频文件", category="general"):
     """
     拖拽式视频上传组件
     
@@ -135,6 +172,7 @@ def drag_drop_video_uploader(key, label="上传视频", help_text="支持拖拽�
         key: 组件的唯一标识符
         label: 显示标签
         help_text: 帮助文本
+        category: 文件分类（如 "fabric", "inventory", "order" 等）
     
     Returns:
         tuple: (uploaded_file, file_path)
@@ -168,7 +206,7 @@ def drag_drop_video_uploader(key, label="上传视频", help_text="支持拖拽�
         
         # 保存文件
         try:
-            file_path = save_uploaded_file(uploaded_file, "video")
+            file_path = save_uploaded_file(uploaded_file, "video", category)
             st.success(f"✅ 视频已保存: {file_path}")
             
             # 显示视频预览（如果文件不太大）
@@ -182,7 +220,7 @@ def drag_drop_video_uploader(key, label="上传视频", help_text="支持拖拽�
     
     return uploaded_file, file_path
 
-def drag_drop_media_uploader(key, label="上传媒体文件", help_text="支持拖拽上传图片和视频文件"):
+def drag_drop_media_uploader(key, label="上传媒体文件", help_text="支持拖拽上传图片和视频文件", category="general"):
     """
     拖拽式媒体文件上传组件（支持图片和视频）
     
@@ -190,6 +228,7 @@ def drag_drop_media_uploader(key, label="上传媒体文件", help_text="支持�
         key: 组件的唯一标识符
         label: 显示标签
         help_text: 帮助文本
+        category: 文件分类（如 "fabric", "inventory", "order" 等）
     
     Returns:
         dict: {"image": (file, path), "video": (file, path)}
@@ -201,11 +240,11 @@ def drag_drop_media_uploader(key, label="上传媒体文件", help_text="支持�
     result = {"image": (None, None), "video": (None, None)}
     
     with col1:
-        image_file, image_path = drag_drop_image_uploader(f"{key}_image", "📷 图片上传", "支持 PNG, JPG, JPEG, GIF 等格式")
+        image_file, image_path = drag_drop_image_uploader(f"{key}_image", "📷 图片上传", "支持 PNG, JPG, JPEG, GIF 等格式", category)
         result["image"] = (image_file, image_path)
     
     with col2:
-        video_file, video_path = drag_drop_video_uploader(f"{key}_video", "🎥 视频上传", "支持 MP4, AVI, MOV 等格式")
+        video_file, video_path = drag_drop_video_uploader(f"{key}_video", "🎥 视频上传", "支持 MP4, AVI, MOV 等格式", category)
         result["video"] = (video_file, video_path)
     
     return result

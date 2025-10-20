@@ -9,7 +9,7 @@ from upload_components import drag_drop_image_uploader, drag_drop_media_uploader
 from ui_components import (
     show_loading_spinner, show_progress_bar, show_success_message, 
     show_error_message, show_warning_message, create_metric_card,
-    create_action_button, create_confirmation_dialog
+    create_action_button, create_confirmation_dialog, create_card_grid
 )
 from auto_backup import check_and_perform_backup
 
@@ -226,6 +226,189 @@ st.markdown("""
 
 # 主标题
 st.markdown('<div class="main-header">🏪 星之梦手作管理系统</div>', unsafe_allow_html=True)
+
+# 处理按钮回调状态 - 完善版本
+
+# 面料编辑对话框
+if st.session_state.get('show_edit_fabric', False):
+    with st.expander("📝 编辑面料", expanded=True):
+        fabric_data = st.session_state.get('edit_fabric_data', {})
+        if fabric_data:
+            with st.form("edit_fabric_form"):
+                st.write(f"**编辑面料:** {fabric_data.get('name', '未知')}")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    new_name = st.text_input("面料名称", value=fabric_data.get('name', ''))
+                    new_material = st.selectbox("材质类型", 
+                                              ["细帆", "细帆绗棉", "缎面绗棉"], 
+                                              index=["细帆", "细帆绗棉", "缎面绗棉"].index(fabric_data.get('material_type', '细帆')) if fabric_data.get('material_type') in ["细帆", "细帆绗棉", "缎面绗棉"] else 0)
+                with col2:
+                    new_usage = st.selectbox("用途类型", 
+                                           ["表布", "里布"], 
+                                           index=["表布", "里布"].index(fabric_data.get('usage_type', '表布')) if fabric_data.get('usage_type') in ["表布", "里布"] else 0)
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    if st.form_submit_button("💾 保存修改", type="primary"):
+                        try:
+                            success = db.update_fabric(
+                                fabric_data['id'],
+                                new_name,
+                                new_material,
+                                new_usage,
+                                fabric_data.get('image_path', '')
+                            )
+                            if success:
+                                st.success("面料更新成功！")
+                                st.session_state.show_edit_fabric = False
+                                st.rerun()
+                            else:
+                                st.error("更新失败！")
+                        except Exception as e:
+                            st.error(f"更新失败: {str(e)}")
+                with col2:
+                    if st.form_submit_button("❌ 取消"):
+                        st.session_state.show_edit_fabric = False
+                        st.rerun()
+
+# 面料详情对话框
+if st.session_state.get('show_fabric_details', False):
+    with st.expander("👁️ 面料详情", expanded=True):
+        fabric_data = st.session_state.get('view_fabric_data', {})
+        if fabric_data:
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                st.markdown(f"### 🧵 {fabric_data.get('name', '未知面料')}")
+                st.write(f"**📋 面料ID:** #{fabric_data.get('id', 'N/A')}")
+                st.write(f"**🏷️ 材质类型:** {fabric_data.get('material_type', '未指定')}")
+                st.write(f"**🎯 用途类型:** {fabric_data.get('usage_type', '未指定')}")
+                st.write(f"**📅 创建时间:** {fabric_data.get('created_at', '未知')}")
+            
+            with col2:
+                if fabric_data.get('image_path'):
+                    try:
+                        st.image(fabric_data['image_path'], caption="面料图片", width=150)
+                    except:
+                        st.write("🖼️ 图片加载失败")
+                else:
+                    st.write("🖼️ 暂无图片")
+            
+            if st.button("关闭详情", key="close_fabric_details"):
+                st.session_state.show_fabric_details = False
+                st.rerun()
+
+# 库存编辑对话框
+if st.session_state.get('show_edit_inventory', False):
+    with st.expander("📝 编辑库存", expanded=True):
+        inventory_data = st.session_state.get('edit_inventory_data', {})
+        if inventory_data:
+            with st.form("edit_inventory_form"):
+                st.write(f"**编辑商品:** {inventory_data.get('product_name', '未知')}")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    new_name = st.text_input("商品名称", value=inventory_data.get('product_name', ''))
+                    new_price = st.number_input("价格", value=float(inventory_data.get('price', 0)), min_value=0.0, step=0.01)
+                with col2:
+                    new_quantity = st.number_input("库存数量", value=int(inventory_data.get('quantity', 0)), min_value=0, step=1)
+                
+                new_description = st.text_area("商品描述", value=inventory_data.get('description', ''))
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    if st.form_submit_button("💾 保存修改", type="primary"):
+                        try:
+                            success = db.update_inventory_item(
+                                inventory_data['id'],
+                                new_name,
+                                new_description,
+                                new_price,
+                                new_quantity,
+                                inventory_data.get('image_path', '')
+                            )
+                            if success:
+                                st.success("库存更新成功！")
+                                st.session_state.show_edit_inventory = False
+                                st.rerun()
+                            else:
+                                st.error("更新失败！")
+                        except Exception as e:
+                            st.error(f"更新失败: {str(e)}")
+                with col2:
+                    if st.form_submit_button("❌ 取消"):
+                        st.session_state.show_edit_inventory = False
+                        st.rerun()
+
+# 库存详情对话框
+if st.session_state.get('show_inventory_details', False):
+    with st.expander("📊 库存详情", expanded=True):
+        inventory_data = st.session_state.get('view_inventory_data', {})
+        if inventory_data:
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                st.markdown(f"### 📦 {inventory_data.get('product_name', '未知商品')}")
+                st.write(f"**📋 商品ID:** #{inventory_data.get('id', 'N/A')}")
+                st.write(f"**💰 价格:** ¥{inventory_data.get('price', 0):.2f}")
+                st.write(f"**📊 库存数量:** {inventory_data.get('quantity', 0)} 件")
+                st.write(f"**📝 描述:** {inventory_data.get('description', '暂无描述')}")
+                st.write(f"**📅 创建时间:** {inventory_data.get('created_at', '未知')}")
+            
+            with col2:
+                if inventory_data.get('image_path'):
+                    try:
+                        st.image(inventory_data['image_path'], caption="商品图片", width=150)
+                    except:
+                        st.write("🖼️ 图片加载失败")
+                else:
+                    st.write("🖼️ 暂无图片")
+            
+            if st.button("关闭详情", key="close_inventory_details"):
+                st.session_state.show_inventory_details = False
+                st.rerun()
+
+# 面料删除确认对话框
+if st.session_state.get('show_delete_fabric_confirm', False):
+    with st.expander("🗑️ 删除确认", expanded=True):
+        fabric_id = st.session_state.get('delete_fabric_id')
+        st.warning("确定要删除这个面料吗？此操作不可撤销！")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("确认删除", type="primary", key="confirm_delete_fabric"):
+                try:
+                    if db.delete_fabric(fabric_id):
+                        st.success("面料删除成功！")
+                        st.session_state.show_delete_fabric_confirm = False
+                        st.rerun()
+                    else:
+                        st.error("删除失败！")
+                except Exception as e:
+                    st.error(f"删除失败: {str(e)}")
+        with col2:
+            if st.button("取消", key="cancel_delete_fabric"):
+                st.session_state.show_delete_fabric_confirm = False
+                st.rerun()
+
+
+
+# 库存删除确认对话框
+if st.session_state.get('show_delete_inventory_confirm', False):
+    with st.expander("🗑️ 删除确认", expanded=True):
+        inventory_id = st.session_state.get('delete_inventory_id')
+        st.warning("确定要删除这个商品吗？此操作不可撤销！")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("确认删除", type="primary", key="confirm_delete_inventory"):
+                if db.delete_inventory_item(inventory_id):
+                    st.success("商品删除成功！")
+                    st.session_state.show_delete_inventory_confirm = False
+                    st.rerun()
+                else:
+                    st.error("删除失败！")
+        with col2:
+            if st.button("取消", key="cancel_delete_inventory"):
+                st.session_state.show_delete_inventory_confirm = False
+                st.rerun()
 
 # 侧边栏导航
 with st.sidebar:
@@ -578,77 +761,35 @@ elif selected == "🧵 面料管理":
             else:
                 st.info(f"📊 共 {total_count} 个面料")
             
-            # 显示面料列表
-            for _, fabric in df_fabrics.iterrows():
-                with st.expander(f"🧵 {fabric['name']} - {fabric['material_type']} ({fabric['usage_type']})"):
-                    # 显示现有图片
-                    if fabric.get('image_path'):
-                        display_uploaded_media(image_path=fabric['image_path'])
-                    
-                    col1, col2, col3 = st.columns([2, 2, 1])
-                    
-                    with col1:
-                        new_name = st.text_input("面料名称", value=fabric['name'], key=f"fabric_name_{fabric['id']}")
-                        new_material = st.selectbox("材质类型", ["细帆", "细帆绗棉", "缎面绗棉"], 
-                                                  index=["细帆", "细帆绗棉", "缎面绗棉"].index(fabric['material_type']),
-                                                  key=f"fabric_material_{fabric['id']}")
-                    
-                    with col2:
-                        new_usage = st.selectbox("用途", ["表布", "里布"], 
-                                                index=["表布", "里布"].index(fabric['usage_type']),
-                                                key=f"fabric_usage_{fabric['id']}")
-                        
-                        # 图片更新
-                        st.markdown("**更新图片:**")
-                        uploaded_file, new_image_path = drag_drop_image_uploader(
-                            key=f"fabric_update_image_{fabric['id']}", 
-                            label="", 
-                            help_text="上传新图片以替换现有图片"
-                        )
-                    
-                    with col3:
-                        if create_action_button("💾 更新", f"update_fabric_{fabric['id']}", "primary"):
-                            try:
-                                # 如果有新图片，使用新图片路径，否则保持原有路径
-                                final_image_path = new_image_path if new_image_path else fabric.get('image_path')
-                                db.update_fabric(fabric['id'], new_name, new_material, new_usage, final_image_path)
-                                show_success_message("面料信息已更新")
-                                st.rerun()
-                            except Exception as e:
-                                show_error_message(f"更新面料信息失败: {str(e)}")
-                        
-                        # 删除按钮和确认逻辑
-                        delete_key = f"delete_fabric_{fabric['id']}"
-                        confirm_key = f"confirm_delete_fabric_{fabric['id']}"
-                        
-                        if create_action_button("🗑️ 删除", delete_key, "danger"):
-                            st.session_state[confirm_key] = True
-                            st.rerun()
-                        
-                        # 显示确认对话框
-                        if st.session_state.get(confirm_key, False):
-                            st.markdown(f"""
-                            <div class="warning-message">
-                                <strong>⚠️ 确认删除</strong><br>
-                                确认删除面料 '{fabric['name']}' 吗？此操作不可撤销。
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                if st.button("✅ 确认删除", key=f"confirm_yes_{fabric['id']}", type="primary"):
-                                    try:
-                                        db.delete_fabric(fabric['id'])
-                                        show_success_message(f"面料 '{fabric['name']}' 已删除")
-                                        del st.session_state[confirm_key]
-                                        st.rerun()
-                                    except Exception as e:
-                                        show_error_message(f"删除面料失败: {str(e)}")
-                                        del st.session_state[confirm_key]
-                            with col2:
-                                if st.button("❌ 取消", key=f"confirm_no_{fabric['id']}"):
-                                    del st.session_state[confirm_key]
-                                    st.rerun()
+            # 卡片视图显示
+            st.markdown("#### 🎴 面料卡片")
+            st.markdown("---")
+            if not df_fabrics.empty:
+                # 转换为字典列表以便卡片组件使用
+                fabric_list = df_fabrics.to_dict('records')
+                
+                # 定义回调函数
+                def on_fabric_edit(fabric_data):
+                    st.session_state.edit_fabric_id = fabric_data['id']
+                    st.session_state.edit_fabric_data = fabric_data
+                    st.session_state.show_edit_fabric = True
+                    st.rerun()
+                
+                def on_fabric_view(fabric_data):
+                    st.session_state.view_fabric_data = fabric_data
+                    st.session_state.show_fabric_details = True
+                    st.rerun()
+                
+                def on_fabric_delete(fabric_data):
+                    st.session_state.delete_fabric_id = fabric_data['id']
+                    st.session_state.show_delete_fabric_confirm = True
+                    st.rerun()
+                
+                create_card_grid(fabric_list, card_type="fabric", columns=3, 
+                               on_edit=on_fabric_edit, on_view=on_fabric_view, on_delete=on_fabric_delete)
+            else:
+                st.info("暂无符合条件的面料数据")
+
         else:
             st.info("📝 暂无面料数据，请添加面料")
     
@@ -671,7 +812,8 @@ elif selected == "🧵 面料管理":
             uploaded_file, image_path = drag_drop_image_uploader(
                 key="fabric_image", 
                 label="📷 面料图片", 
-                help_text="支持拖拽上传 PNG, JPG, JPEG, GIF 等格式的图片"
+                help_text="支持拖拽上传 PNG, JPG, JPEG, GIF 等格式的图片",
+                category="fabric"
             )
             
             submitted = st.form_submit_button("➕ 添加面料", use_container_width=True)
@@ -784,44 +926,31 @@ elif selected == "📦 库存管理":
             with col_stat3:
                 st.metric("🔴 库存缺货", stock_stats["缺货"])
             
-            # 显示库存列表
-            for item in filtered_items:
-                status_color = "🟢" if item['quantity'] > 10 else "🟡" if item['quantity'] > 0 else "🔴"
+            # 卡片视图显示
+            st.markdown("#### 🎴 库存卡片")
+            st.markdown("---")
+            if filtered_items:
+                # 定义回调函数
+                def on_inventory_edit(inventory_data):
+                    st.session_state.edit_inventory_id = inventory_data['id']
+                    st.session_state.edit_inventory_data = inventory_data
+                    st.session_state.show_edit_inventory = True
+                    st.rerun()
                 
-                with st.expander(f"{status_color} {item['product_name']} - 库存: {item['quantity']} - ¥{item['price']:.2f}"):
-                    col1, col2, col3 = st.columns([2, 2, 1])
-                    
-                    with col1:
-                        new_name = st.text_input("商品名称", value=item['product_name'], key=f"item_name_{item['id']}")
-                        new_description = st.text_area("商品描述", value=item['description'] or "", key=f"item_desc_{item['id']}")
-                    
-                    with col2:
-                        new_price = st.number_input("价格", value=float(item['price']), min_value=0.0, step=0.01, key=f"item_price_{item['id']}")
-                        quantity_change = st.number_input("库存调整", value=0, min_value=-1000, max_value=1000, step=1, key=f"item_qty_{item['id']}", 
-                                                        help="正数增加库存，负数减少库存", format="%d")
-                        new_image = st.text_input("图片路径", value=item['image_path'] or "", key=f"item_image_{item['id']}")
-                    
-                    with col3:
-                        if st.button("💾 更新", key=f"update_item_{item['id']}"):
-                            # 更新商品完整信息
-                            new_quantity = item['quantity'] + quantity_change
-                            success = db.update_inventory_item(
-                                item['id'], new_name, new_description, 
-                                new_price, new_quantity, new_image
-                            )
-                            if success:
-                                st.success("✅ 商品信息已更新")
-                                st.rerun()
-                            else:
-                                st.error("❌ 更新失败")
-                        
-                        if st.button("🗑️ 删除", key=f"delete_item_{item['id']}", type="secondary"):
-                            success = db.delete_inventory_item(item['id'])
-                            if success:
-                                st.success("✅ 商品已删除")
-                                st.rerun()
-                            else:
-                                st.error("❌ 删除失败，该商品可能已被订单使用")
+                def on_inventory_view(inventory_data):
+                    st.session_state.view_inventory_data = inventory_data
+                    st.session_state.show_inventory_details = True
+                    st.rerun()
+                
+                def on_inventory_delete(inventory_data):
+                    st.session_state.delete_inventory_id = inventory_data['id']
+                    st.session_state.show_delete_inventory_confirm = True
+                    st.rerun()
+                
+                create_card_grid(filtered_items, card_type="inventory", columns=3,
+                               on_edit=on_inventory_edit, on_view=on_inventory_view, on_delete=on_inventory_delete)
+            else:
+                st.info("暂无符合条件的库存数据")
         else:
             st.info("📝 暂无库存数据，请添加商品")
     
@@ -1419,7 +1548,7 @@ elif selected == "📋 订单管理":
                 
                 # 图片上传区域
                 st.markdown("##### 📸 订单图片上传")
-                uploaded_file, order_image_path = drag_drop_image_uploader("order_image", "订单相关图片（可选）")
+                uploaded_file, order_image_path = drag_drop_image_uploader("order_image", "订单相关图片（可选）", category="order")
                 
                 col1, col2 = st.columns(2)
                 with col1:

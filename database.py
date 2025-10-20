@@ -208,28 +208,24 @@ class DatabaseManager:
         return success
     
     def delete_order(self, order_id: int) -> bool:
-        """删除订单及其相关商品"""
+        """删除订单及其相关商品（支持删除所有状态的订单）"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
-        # 检查订单状态，已完成的订单不能删除
-        cursor.execute("SELECT status FROM orders WHERE id=?", (order_id,))
-        order_status = cursor.fetchone()
-        
-        if order_status and order_status[0] == 'completed':
+        try:
+            # 删除订单商品
+            cursor.execute("DELETE FROM order_items WHERE order_id=?", (order_id,))
+            
+            # 删除订单（不再检查状态，允许删除所有状态的订单）
+            cursor.execute("DELETE FROM orders WHERE id=?", (order_id,))
+            success = cursor.rowcount > 0
+            
+            conn.commit()
             conn.close()
-            return False  # 已完成的订单不能删除
-        
-        # 删除订单商品
-        cursor.execute("DELETE FROM order_items WHERE order_id=?", (order_id,))
-        
-        # 删除订单
-        cursor.execute("DELETE FROM orders WHERE id=?", (order_id,))
-        success = cursor.rowcount > 0
-        
-        conn.commit()
-        conn.close()
-        return success
+            return success
+        except Exception as e:
+            conn.close()
+            return False
     
     def delete_orders_batch(self, order_ids: List[int]) -> Tuple[int, List[int]]:
         """批量删除订单
@@ -247,23 +243,19 @@ class DatabaseManager:
         failed_ids = []
         
         for order_id in order_ids:
-            # 检查订单状态
-            cursor.execute("SELECT status FROM orders WHERE id=?", (order_id,))
-            order_status = cursor.fetchone()
-            
-            if order_status and order_status[0] == 'completed':
-                failed_ids.append(order_id)
-                continue
-            
-            # 删除订单商品
-            cursor.execute("DELETE FROM order_items WHERE order_id=?", (order_id,))
-            
-            # 删除订单
-            cursor.execute("DELETE FROM orders WHERE id=?", (order_id,))
-            
-            if cursor.rowcount > 0:
-                success_count += 1
-            else:
+            try:
+                # 删除订单商品
+                cursor.execute("DELETE FROM order_items WHERE order_id=?", (order_id,))
+                
+                # 删除订单（不再检查状态，允许删除所有状态的订单）
+                cursor.execute("DELETE FROM orders WHERE id=?", (order_id,))
+                
+                if cursor.rowcount > 0:
+                    success_count += 1
+                else:
+                    failed_ids.append(order_id)
+            except Exception as e:
+                # 如果删除过程中出现错误，记录失败的订单ID
                 failed_ids.append(order_id)
         
         conn.commit()
@@ -430,6 +422,24 @@ class DatabaseManager:
             })
         conn.close()
         return fabrics
+    
+    def get_fabric_by_id(self, fabric_id: int) -> Optional[Dict]:
+        """根据ID获取单个面料"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM fabrics WHERE id=?", (fabric_id,))
+        row = cursor.fetchone()
+        
+        if row:
+            fabric = {
+                'id': row[0], 'name': row[1], 'material_type': row[2],
+                'usage_type': row[3], 'created_at': row[4], 'updated_at': row[5]
+            }
+            conn.close()
+            return fabric
+        
+        conn.close()
+        return None
     
     def update_fabric(self, fabric_id: int, name: str, material_type: str, usage_type: str, image_path: str = None):
         """更新面料"""
