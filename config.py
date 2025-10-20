@@ -33,7 +33,7 @@ class UIConfig:
     page_title: str = "星之梦服装定制管理系统"
     page_icon: str = "👗"
     layout: str = "wide"
-    initial_sidebar_state: str = "collapsed"
+    initial_sidebar_state: str = "expanded"
     
     # 分页配置
     page_size_options: List[int] = field(default_factory=lambda: [10, 20, 50])

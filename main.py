@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from database import DatabaseManager
-from streamlit_option_menu import option_menu
 import plotly.express as px
 import plotly.graph_objects as go
 from upload_components import drag_drop_image_uploader, drag_drop_media_uploader, display_uploaded_media
@@ -60,18 +59,6 @@ st.markdown("""
         --background-light: #F8F9FA;
         --text-dark: #2D3748;
         --border-light: #E2E8F0;
-    }
-    
-    /* 隐藏侧边栏 */
-    .css-1d391kg {
-        display: none;
-    }
-    
-    /* 主容器样式 */
-    .main .block-container {
-        padding-top: 1rem;
-        padding-bottom: 1rem;
-        max-width: 100%;
     }
     
     /* 主标题样式 */
@@ -434,53 +421,19 @@ if st.session_state.get('show_delete_inventory_confirm', False):
                 st.session_state.show_delete_inventory_confirm = False
                 st.rerun()
 
-# 顶部导航栏
-st.markdown("### 🏪 星之梦手作管理系统")
-selected = option_menu(
-    menu_title=None,
-    options=["📊 仪表板", "👥 客户管理", "🧵 面料管理", "📦 库存管理", "📋 订单管理", "⚙️ 系统设置"],
-    icons=["graph-up", "people", "palette", "box", "clipboard-check", "gear"],
-    menu_icon="cast",
-    default_index=0,
-    orientation="horizontal",
-    styles={
-        "container": {"padding": "0!important", "background-color": "#f8f9fa", "border-radius": "10px"},
-        "icon": {"color": "#1f77b4", "font-size": "16px"},
-        "nav-link": {"font-size": "14px", "text-align": "center", "margin": "0px", "--hover-color": "#e9ecef", "border-radius": "8px"},
-        "nav-link-selected": {"background-color": "#1f77b4", "color": "white", "border-radius": "8px"},
-    }
-)
+# 侧边栏
+with st.sidebar:
+    st.markdown("### 📋 系统导航")
 
-# 仪表板页面
-if selected == "📊 仪表板":
-    render_dashboard_page(db, dashboard_service)
-
-# 客户管理页面
-elif selected == "👥 客户管理":
-    render_customer_page(db)
-
-# 面料管理页面
-elif selected == "🧵 面料管理":
-    render_fabric_page(db)
-
-# 库存管理页面
-elif selected == "📦 库存管理":
-    render_inventory_page(db)
-
-# 订单管理页面
-elif selected == "📋 订单管理":
-    render_order_page(db, dashboard_service, export_service, cache_manager)
-
-# 系统设置页面
-elif selected == "⚙️ 系统设置":
-    render_settings_page(db)
+# 默认显示仪表板页面
+render_dashboard_page(db, dashboard_service)
 
 # 页脚
 st.markdown("---")
 st.markdown(
     """
-    <div style='text-align: center; color: #999; font-size: 12px; padding: 0.5rem;'>
-        © 2025 星之梦手作管理系统
+    <div style='text-align: center; color: #666; padding: 1rem;'>
+        🏪 星之梦手作管理系统 | 让生意管理更简单高效
     </div>
     """, 
     unsafe_allow_html=True
