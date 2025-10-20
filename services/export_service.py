@@ -1,13 +1,14 @@
 """
 导出业务服务层
 
-负责处理各种导出功能的业务逻辑，包括CSV导出、PDF导出等。
+负责处理各种导出功能的业务逻辑，包括CSV导出、PDF导出、批量打印等。
 将导出相关的业务逻辑从UI层分离，提高代码的可维护性和可测试性。
 """
 
 from typing import List, Dict, Any, Tuple
 from datetime import datetime
 from database import DatabaseManager
+from .print_service import PrintService
 
 
 class ExportService:
@@ -21,6 +22,7 @@ class ExportService:
             db_manager: 数据库管理器实例
         """
         self.db = db_manager
+        self.print_service = PrintService(db_manager)
     
     def export_orders_to_csv(self, order_ids: List[int]) -> Tuple[str, str]:
         """
@@ -88,6 +90,26 @@ class ExportService:
             
         except Exception as e:
             raise Exception(f"PDF导出失败: {str(e)}")
+    
+    def batch_print_orders(self, order_ids: List[int]) -> Tuple[bytes, str]:
+        """
+        批量打印订单 (76mm*130mm格式)
+        
+        Args:
+            order_ids: 订单ID列表
+            
+        Returns:
+            元组 (PDF数据, 文件名)
+            
+        Raises:
+            Exception: 打印过程中的任何错误
+        """
+        try:
+            pdf_data = self.print_service.generate_orders_print_pdf(order_ids)
+            filename = self.print_service.get_print_filename(order_ids)
+            return pdf_data, filename
+        except Exception as e:
+            raise Exception(f"批量打印失败: {str(e)}")
     
     def get_export_summary(self, order_ids: List[int]) -> Dict[str, Any]:
         """
@@ -194,7 +216,14 @@ class ExportService:
             {
                 'format': 'pdf',
                 'name': 'PDF文档',
-                'description': '适合打印的文档格式 (76mm×130mm)',
+                'description': '适合查看的标准PDF文档格式',
+                'mime_type': 'application/pdf',
+                'extension': '.pdf'
+            },
+            {
+                'format': 'print',
+                'name': '批量打印',
+                'description': '76mm×130mm小票打印格式',
                 'mime_type': 'application/pdf',
                 'extension': '.pdf'
             }
