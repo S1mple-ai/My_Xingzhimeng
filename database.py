@@ -1,17 +1,94 @@
 import sqlite3
 import os
 import logging
+import streamlit as st
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
+from functools import wraps
+import hashlib
+import json
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# 缓存装饰器
+def cache_query(ttl: int = 300, key_prefix: str = ""):
+    """
+    查询缓存装饰器
+    Args:
+        ttl: 缓存时间（秒）
+        key_prefix: 缓存键前缀
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # 生成缓存键
+            cache_key = f"{key_prefix}_{func.__name__}"
+            
+            # 添加参数到缓存键
+            if args or kwargs:
+                params_str = json.dumps({"args": args[1:], "kwargs": kwargs}, sort_keys=True, default=str)
+                cache_key += f"_{hashlib.md5(params_str.encode()).hexdigest()[:8]}"
+            
+            # 尝试从缓存获取
+            try:
+                cached_result = st.session_state.get(f"cache_{cache_key}")
+                if cached_result is not None:
+                    cache_time = st.session_state.get(f"cache_time_{cache_key}", 0)
+                    if (datetime.now().timestamp() - cache_time) < ttl:
+                        logger.debug(f"缓存命中: {cache_key}")
+                        return cached_result
+            except Exception as e:
+                logger.warning(f"缓存读取失败: {e}")
+            
+            # 执行原函数
+            result = func(*args, **kwargs)
+            
+            # 存储到缓存
+            try:
+                st.session_state[f"cache_{cache_key}"] = result
+                st.session_state[f"cache_time_{cache_key}"] = datetime.now().timestamp()
+                logger.debug(f"缓存存储: {cache_key}")
+            except Exception as e:
+                logger.warning(f"缓存存储失败: {e}")
+            
+            return result
+        return wrapper
+    return decorator
+
 class DatabaseManager:
     def __init__(self, db_path: str = "business_management.db"):
         self.db_path = db_path
         self.init_database()
+    
+    def clear_cache(self, cache_prefix: str = None):
+        """清理缓存"""
+        try:
+            if cache_prefix:
+                # 清理特定前缀的缓存
+                keys_to_remove = []
+                for key in st.session_state.keys():
+                    if key.startswith(f"cache_{cache_prefix}") or key.startswith(f"cache_time_{cache_prefix}"):
+                        keys_to_remove.append(key)
+                
+                for key in keys_to_remove:
+                    del st.session_state[key]
+                
+                logger.debug(f"清理缓存: {cache_prefix} ({len(keys_to_remove)} 项)")
+            else:
+                # 清理所有查询缓存
+                keys_to_remove = []
+                for key in st.session_state.keys():
+                    if key.startswith("cache_") or key.startswith("cache_time_"):
+                        keys_to_remove.append(key)
+                
+                for key in keys_to_remove:
+                    del st.session_state[key]
+                
+                logger.debug(f"清理所有缓存 ({len(keys_to_remove)} 项)")
+        except Exception as e:
+            logger.warning(f"缓存清理失败: {e}")
     
     def get_connection(self):
         """获取数据库连接"""
@@ -298,6 +375,10 @@ class DatabaseManager:
             customer_id = cursor.lastrowid
             conn.commit()
             conn.close()
+            
+            # 清理客户相关缓存
+            self.clear_cache("customers")
+            
             logger.info(f"Successfully added customer: {nickname}")
             return customer_id
         except sqlite3.Error as e:
@@ -306,6 +387,7 @@ class DatabaseManager:
                 conn.close()
             raise Exception(f"添加客户失败: {str(e)}")
     
+    @cache_query(ttl=300, key_prefix="customers")
     def get_customers(self) -> List[Dict]:
         """获取所有客户"""
         conn = self.get_connection()
@@ -397,6 +479,10 @@ class DatabaseManager:
             fabric_id = cursor.lastrowid
             conn.commit()
             conn.close()
+            
+            # 清理面料相关缓存
+            self.clear_cache("fabrics")
+            
             logger.info(f"Successfully added fabric: {name}")
             return fabric_id
         except sqlite3.Error as e:
@@ -405,6 +491,7 @@ class DatabaseManager:
                 conn.close()
             raise Exception(f"添加面料失败: {str(e)}")
     
+    @cache_query(ttl=600, key_prefix="fabrics")
     def get_fabrics(self, usage_type: str = None) -> List[Dict]:
         """获取面料列表"""
         conn = self.get_connection()
@@ -515,8 +602,13 @@ class DatabaseManager:
         item_id = cursor.lastrowid
         conn.commit()
         conn.close()
+        
+        # 清理库存相关缓存
+        self.clear_cache("inventory")
+        
         return item_id
     
+    @cache_query(ttl=180, key_prefix="inventory")
     def get_inventory_items(self) -> List[Dict]:
         """获取库存商品"""
         conn = self.get_connection()
@@ -608,6 +700,10 @@ class DatabaseManager:
         order_id = cursor.lastrowid
         conn.commit()
         conn.close()
+        
+        # 清理订单相关缓存
+        self.clear_cache("orders_paginated")
+        
         return order_id
     
     def add_order_item(self, order_id: int, item_type: str, quantity: int = 1, 
@@ -667,6 +763,7 @@ class DatabaseManager:
         conn.close()
         return orders
     
+    @cache_query(ttl=60, key_prefix="orders_paginated")
     def get_orders_paginated(self, page: int = 1, page_size: int = 10, search_term: str = "", status_filter: str = "", 
                            date_filter: str = "", amount_filter: str = "", sort_by: str = "创建时间(新到旧)") -> Tuple[List[Dict], int]:
         """获取分页订单列表"""
