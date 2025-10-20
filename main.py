@@ -24,69 +24,6 @@ from pages import render_dashboard_page, render_order_page, render_customer_page
 # 页面配置
 st.set_page_config(**config.get_page_config())
 
-# 全局样式优化
-st.markdown("""
-<style>
-    /* 隐藏Streamlit默认元素 */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    
-    /* 主容器样式 */
-    .main .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-        max-width: 1200px;
-    }
-    
-    /* 卡片样式 */
-    .stMetric {
-        background-color: white;
-        padding: 1rem;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        border: 1px solid #e9ecef;
-    }
-    
-    /* 按钮样式优化 */
-    .stButton > button {
-        border-radius: 8px;
-        border: none;
-        transition: all 0.3s ease;
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-    }
-    
-    /* 表格样式 */
-    .stDataFrame {
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    
-    /* 输入框样式 */
-    .stTextInput > div > div > input,
-    .stSelectbox > div > div > select,
-    .stTextArea > div > div > textarea {
-        border-radius: 8px;
-        border: 1px solid #ddd;
-    }
-    
-    /* 标签页样式 */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 8px;
-        padding: 0.5rem 1rem;
-    }
-</style>
-""", unsafe_allow_html=True)
-
 # 初始化数据库和服务层
 @st.cache_resource
 def init_database():
@@ -123,6 +60,18 @@ st.markdown("""
         --background-light: #F8F9FA;
         --text-dark: #2D3748;
         --border-light: #E2E8F0;
+    }
+    
+    /* 隐藏侧边栏 */
+    .css-1d391kg {
+        display: none;
+    }
+    
+    /* 主容器样式 */
+    .main .block-container {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+        max-width: 100%;
     }
     
     /* 主标题样式 */
@@ -486,44 +435,7 @@ if st.session_state.get('show_delete_inventory_confirm', False):
                 st.rerun()
 
 # 顶部导航栏
-st.markdown("""
-<style>
-    .main-header {
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        padding: 1rem 2rem;
-        border-radius: 10px;
-        margin-bottom: 2rem;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-    .main-title {
-        color: white;
-        font-size: 2rem;
-        font-weight: bold;
-        margin: 0;
-        text-align: center;
-    }
-    .main-subtitle {
-        color: rgba(255, 255, 255, 0.8);
-        font-size: 1rem;
-        margin: 0;
-        text-align: center;
-    }
-    .nav-container {
-        margin: 1.5rem 0;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# 主标题
-st.markdown("""
-<div class="main-header">
-    <h1 class="main-title">🏪 星之梦手作管理系统</h1>
-    <p class="main-subtitle">让生意管理更简单高效</p>
-</div>
-""", unsafe_allow_html=True)
-
-# 顶部导航菜单
-st.markdown('<div class="nav-container">', unsafe_allow_html=True)
+st.markdown("### 🏪 星之梦手作管理系统")
 selected = option_menu(
     menu_title=None,
     options=["📊 仪表板", "👥 客户管理", "🧵 面料管理", "📦 库存管理", "📋 订单管理", "⚙️ 系统设置"],
@@ -532,25 +444,12 @@ selected = option_menu(
     default_index=0,
     orientation="horizontal",
     styles={
-        "container": {"padding": "0!important", "background-color": "transparent"},
-        "icon": {"color": "#667eea", "font-size": "16px"},
-        "nav-link": {
-            "font-size": "14px", 
-            "text-align": "center", 
-            "margin": "0px",
-            "padding": "0.5rem 1rem",
-            "border-radius": "8px",
-            "--hover-color": "#f0f2f6",
-            "color": "#333"
-        },
-        "nav-link-selected": {
-            "background-color": "#667eea",
-            "color": "white",
-            "font-weight": "bold"
-        },
+        "container": {"padding": "0!important", "background-color": "#f8f9fa", "border-radius": "10px"},
+        "icon": {"color": "#1f77b4", "font-size": "16px"},
+        "nav-link": {"font-size": "14px", "text-align": "center", "margin": "0px", "--hover-color": "#e9ecef", "border-radius": "8px"},
+        "nav-link-selected": {"background-color": "#1f77b4", "color": "white", "border-radius": "8px"},
     }
 )
-st.markdown('</div>', unsafe_allow_html=True)
 
 # 仪表板页面
 if selected == "📊 仪表板":
@@ -577,22 +476,15 @@ elif selected == "⚙️ 系统设置":
     render_settings_page(db)
 
 # 页脚
-st.markdown("""
-<style>
-    .footer {
-        margin-top: 3rem;
-        padding: 1.5rem;
-        background-color: #f8f9fa;
-        border-radius: 10px;
-        text-align: center;
-        color: #6c757d;
-        font-size: 0.9rem;
-    }
-</style>
-<div class="footer">
-    © 2025 星之梦手作管理系统 | 专业的手工艺品管理解决方案
-</div>
-""", unsafe_allow_html=True)
+st.markdown("---")
+st.markdown(
+    """
+    <div style='text-align: center; color: #999; font-size: 12px; padding: 0.5rem;'>
+        © 2025 星之梦手作管理系统
+    </div>
+    """, 
+    unsafe_allow_html=True
+)
 
 if __name__ == "__main__":
     pass
