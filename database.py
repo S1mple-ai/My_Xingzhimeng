@@ -246,6 +246,235 @@ class DatabaseManager:
         conn.commit()
         conn.close()
     
+    @cache_query(ttl=300, key_prefix="fabric_analysis")
+    def get_fabric_usage_analysis(self):
+        """获取面料使用分析数据"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # 查询表布使用情况
+        cursor.execute("""
+            SELECT f.name as fabric_name, f.usage_type, COUNT(oi.outer_fabric_id) as usage_count
+            FROM fabrics f
+            LEFT JOIN order_items oi ON f.id = oi.outer_fabric_id
+            WHERE f.usage_type = '表布'
+            GROUP BY f.id, f.name, f.usage_type
+            HAVING usage_count > 0
+            ORDER BY usage_count DESC
+        """)
+        outer_fabric_data = cursor.fetchall()
+        
+        # 查询里布使用情况
+        cursor.execute("""
+            SELECT f.name as fabric_name, f.usage_type, COUNT(oi.inner_fabric_id) as usage_count
+            FROM fabrics f
+            LEFT JOIN order_items oi ON f.id = oi.inner_fabric_id
+            WHERE f.usage_type = '里布'
+            GROUP BY f.id, f.name, f.usage_type
+            HAVING usage_count > 0
+            ORDER BY usage_count DESC
+        """)
+        inner_fabric_data = cursor.fetchall()
+        
+        # 合并数据
+        fabric_usage = []
+        for row in outer_fabric_data:
+            fabric_usage.append({
+                'fabric_name': row[0],
+                'usage_type': row[1],
+                'usage_count': row[2]
+            })
+        
+        for row in inner_fabric_data:
+            fabric_usage.append({
+                'fabric_name': row[0],
+                'usage_type': row[1],
+                'usage_count': row[2]
+            })
+        
+        conn.close()
+        return fabric_usage
+    
+    @cache_query(ttl=300, key_prefix="sales_analysis")
+    def get_sales_analysis(self, time_period: str):
+        """获取销售分析数据"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # 根据时间段确定日期范围
+        if time_period == "近一周":
+            date_filter = "DATE(o.created_at) >= DATE('now', '-7 days')"
+        elif time_period == "近一月":
+            date_filter = "DATE(o.created_at) >= DATE('now', '-30 days')"
+        elif time_period == "近一季度":
+            date_filter = "DATE(o.created_at) >= DATE('now', '-90 days')"
+        elif time_period == "近一年":
+            date_filter = "DATE(o.created_at) >= DATE('now', '-365 days')"
+        else:
+            date_filter = "1=1"  # 所有数据
+        
+        # 获取订单数据
+        cursor.execute(f"""
+            SELECT o.id, o.total_amount, DATE(o.created_at) as order_date
+            FROM orders o
+            WHERE {date_filter} AND o.status != 'cancelled'
+            ORDER BY o.created_at DESC
+        """)
+        orders = cursor.fetchall()
+        
+        if not orders:
+            conn.close()
+            return {'orders': [], 'daily_sales': [], 'product_sales': [], 'total_orders': 0, 'total_amount': 0}
+        
+        # 计算每日销售额
+        cursor.execute(f"""
+            SELECT DATE(o.created_at) as date, SUM(o.total_amount) as amount, COUNT(*) as order_count
+            FROM orders o
+            WHERE {date_filter} AND o.status != 'cancelled'
+            GROUP BY DATE(o.created_at)
+            ORDER BY date
+        """)
+        daily_sales = []
+        for row in cursor.fetchall():
+            daily_sales.append({
+                'date': row[0],
+                'amount': float(row[1]) if row[1] else 0,
+                'order_count': row[2]
+            })
+        
+        # 获取商品销售排行（现货商品）
+        cursor.execute(f"""
+            SELECT i.product_name, SUM(oi.quantity) as quantity, SUM(oi.quantity * oi.unit_price) as total_amount
+            FROM order_items oi
+            JOIN orders o ON oi.order_id = o.id
+            LEFT JOIN inventory i ON oi.inventory_id = i.id
+            WHERE {date_filter} AND o.status != 'cancelled' AND oi.item_type = '现货' AND i.product_name IS NOT NULL
+            GROUP BY i.product_name
+            ORDER BY quantity DESC
+        """)
+        product_sales = []
+        for row in cursor.fetchall():
+            product_sales.append({
+                'product_name': row[0],
+                'quantity': row[1],
+                'total_amount': float(row[2]) if row[2] else 0
+            })
+        
+        # 获取定制商品销售情况
+        cursor.execute(f"""
+            SELECT 
+                CASE 
+                    WHEN of.name IS NOT NULL AND if.name IS NOT NULL 
+                    THEN '定制商品(' || of.name || '+' || if.name || ')'
+                    ELSE '定制商品'
+                END as product_name,
+                SUM(oi.quantity) as quantity,
+                SUM(oi.quantity * oi.unit_price) as total_amount
+            FROM order_items oi
+            JOIN orders o ON oi.order_id = o.id
+            LEFT JOIN fabrics of ON oi.outer_fabric_id = of.id
+            LEFT JOIN fabrics if ON oi.inner_fabric_id = if.id
+            WHERE {date_filter} AND o.status != 'cancelled' AND oi.item_type = '定制'
+            GROUP BY of.name, if.name
+            ORDER BY quantity DESC
+        """)
+        
+        for row in cursor.fetchall():
+            product_sales.append({
+                'product_name': row[0],
+                'quantity': row[1],
+                'total_amount': float(row[2]) if row[2] else 0
+            })
+        
+        # 计算总计
+        total_orders = len(orders)
+        total_amount = sum([float(order[1]) if order[1] else 0 for order in orders])
+        
+        conn.close()
+        
+        return {
+            'orders': orders,
+            'daily_sales': daily_sales,
+            'product_sales': product_sales,
+            'total_orders': total_orders,
+            'total_amount': total_amount
+        }
+    
+    @cache_query(ttl=300, key_prefix="customer_analysis")
+    def get_customer_analysis(self):
+        """获取客户分析数据"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # 获取客户积分分布
+        cursor.execute("""
+            SELECT points
+            FROM customers
+            WHERE points > 0
+            ORDER BY points
+        """)
+        points_data = cursor.fetchall()
+        points_distribution = [{'points': row[0]} for row in points_data]
+        
+        # 获取客户订单频次
+        cursor.execute("""
+            SELECT c.nickname, COUNT(o.id) as order_count, SUM(o.total_amount) as total_spent
+            FROM customers c
+            LEFT JOIN orders o ON c.id = o.customer_id
+            WHERE o.id IS NOT NULL
+            GROUP BY c.id, c.nickname
+            ORDER BY order_count DESC
+        """)
+        order_frequency_data = cursor.fetchall()
+        order_frequency = []
+        for row in order_frequency_data:
+            order_frequency.append({
+                'nickname': row[0],
+                'order_count': row[1],
+                'total_spent': float(row[2]) if row[2] else 0
+            })
+        
+        conn.close()
+        
+        return {
+            'points_distribution': points_distribution,
+            'order_frequency': order_frequency
+        }
+    
+    @cache_query(ttl=300, key_prefix="order_status_analysis")
+    def get_order_status_analysis(self):
+        """获取订单状态分析数据"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # 订单状态映射
+        status_mapping = {
+            'pending': '待处理',
+            'processing': '处理中',
+            'completed': '已完成',
+            'cancelled': '已取消',
+            'shipped': '已发货',
+            'delivered': '已送达'
+        }
+        
+        cursor.execute("""
+            SELECT status, COUNT(*) as count
+            FROM orders
+            GROUP BY status
+            ORDER BY count DESC
+        """)
+        
+        status_data = []
+        for row in cursor.fetchall():
+            status_data.append({
+                'status': row[0],
+                'status_name': status_mapping.get(row[0], row[0]),
+                'count': row[1]
+            })
+        
+        conn.close()
+        return status_data
+    
     def get_order_by_id(self, order_id: int) -> Optional[Dict]:
         """根据ID获取订单详情"""
         conn = self.get_connection()
