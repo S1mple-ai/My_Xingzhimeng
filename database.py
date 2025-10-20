@@ -441,39 +441,286 @@ class DatabaseManager:
             'order_frequency': order_frequency
         }
     
-    @cache_query(ttl=300, key_prefix="order_status_analysis")
-    def get_order_status_analysis(self):
-        """获取订单状态分析数据"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        # 订单状态映射
-        status_mapping = {
-            'pending': '待处理',
-            'processing': '处理中',
-            'completed': '已完成',
-            'cancelled': '已取消',
-            'shipped': '已发货',
-            'delivered': '已送达'
-        }
-        
-        cursor.execute("""
-            SELECT status, COUNT(*) as count
-            FROM orders
-            GROUP BY status
-            ORDER BY count DESC
-        """)
-        
-        status_data = []
-        for row in cursor.fetchall():
-            status_data.append({
-                'status': row[0],
-                'status_name': status_mapping.get(row[0], row[0]),
-                'count': row[1]
-            })
-        
-        conn.close()
-        return status_data
+
+    
+    @cache_query(ttl=300, key_prefix="unified_dashboard")
+    def get_unified_dashboard_data(self, time_period: str):
+        """获取统一时间段的仪表盘数据"""
+        try:
+            # 根据时间段计算日期范围
+            date_filter = self._get_date_filter(time_period)
+            
+            # 获取汇总数据
+            summary = self._get_summary_data(date_filter)
+            
+            # 获取每日销售数据
+            daily_sales = self._get_daily_sales_data(date_filter)
+            
+            # 获取面料使用数据
+            fabric_usage = self._get_fabric_usage_data(date_filter)
+            
+            # 获取商品销售数据
+            product_sales = self._get_product_sales_data(date_filter)
+            
+            # 获取客户活跃度数据
+            customer_activity = self._get_customer_activity_data(date_filter)
+            
+            return {
+                'summary': summary,
+                'daily_sales': daily_sales,
+                'fabric_usage': fabric_usage,
+                'product_sales': product_sales,
+                'customer_activity': customer_activity
+            }
+            
+        except Exception as e:
+            logger.error(f"获取统一仪表盘数据时出错: {e}")
+            return {
+                'summary': {'total_orders': 0, 'total_amount': 0, 'active_customers': 0},
+                'daily_sales': [],
+                'fabric_usage': [],
+                'product_sales': [],
+                'customer_activity': [],
+                'order_status': []
+            }
+    
+    def _get_date_filter(self, time_period: str) -> str:
+        """根据时间段获取日期过滤条件"""
+        if time_period == "全部时间":
+            return ""
+        elif time_period == "近一周":
+            return "AND DATE(created_at) >= DATE('now', '-7 days')"
+        elif time_period == "近一月":
+            return "AND DATE(created_at) >= DATE('now', '-30 days')"
+        elif time_period == "近一季度":
+            return "AND DATE(created_at) >= DATE('now', '-90 days')"
+        elif time_period == "近一年":
+            return "AND DATE(created_at) >= DATE('now', '-365 days')"
+        else:
+            return ""
+    
+    def _get_summary_data(self, date_filter: str) -> Dict:
+        """获取汇总数据"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # 订单总数和销售总额
+            cursor.execute(f"""
+                SELECT 
+                    COUNT(*) as total_orders,
+                    COALESCE(SUM(total_amount), 0) as total_amount
+                FROM orders 
+                WHERE 1=1 {date_filter}
+            """)
+            result = cursor.fetchone()
+            
+            # 活跃客户数
+            cursor.execute(f"""
+                SELECT COUNT(DISTINCT customer_id) as active_customers
+                FROM orders 
+                WHERE 1=1 {date_filter}
+            """)
+            customer_result = cursor.fetchone()
+            
+            conn.close()
+            return {
+                'total_orders': result[0],
+                'total_amount': float(result[1]) if result[1] else 0,
+                'active_customers': customer_result[0]
+            }
+            
+        except Exception as e:
+            logger.error(f"获取汇总数据时出错: {e}")
+            return {'total_orders': 0, 'total_amount': 0, 'active_customers': 0}
+    
+    def _get_daily_sales_data(self, date_filter: str) -> List[Dict]:
+        """获取每日销售数据"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(f"""
+                SELECT 
+                    DATE(created_at) as date,
+                    COUNT(*) as order_count,
+                    COALESCE(SUM(total_amount), 0) as amount
+                FROM orders 
+                WHERE 1=1 {date_filter}
+                GROUP BY DATE(created_at)
+                ORDER BY date
+            """)
+            results = cursor.fetchall()
+            
+            daily_sales = []
+            for row in results:
+                daily_sales.append({
+                    'date': row[0],
+                    'order_count': row[1],
+                    'amount': float(row[2]) if row[2] else 0
+                })
+            
+            conn.close()
+            return daily_sales
+            
+        except Exception as e:
+            logger.error(f"获取每日销售数据时出错: {e}")
+            return []
+    
+    def _get_fabric_usage_data(self, date_filter: str) -> List[Dict]:
+        """获取面料使用数据"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # 表布使用情况
+            cursor.execute(f"""
+                SELECT 
+                    f.name as fabric_name,
+                    f.usage_type,
+                    COUNT(oi.outer_fabric_id) as usage_count
+                FROM fabrics f
+                LEFT JOIN order_items oi ON f.id = oi.outer_fabric_id
+                LEFT JOIN orders o ON oi.order_id = o.id
+                WHERE f.usage_type = '表布' AND oi.id IS NOT NULL {date_filter.replace('created_at', 'o.created_at') if date_filter else ''}
+                GROUP BY f.id, f.name, f.usage_type
+                ORDER BY usage_count DESC
+            """)
+            outer_results = cursor.fetchall()
+            
+            # 里布使用情况
+            cursor.execute(f"""
+                SELECT 
+                    f.name as fabric_name,
+                    f.usage_type,
+                    COUNT(oi.inner_fabric_id) as usage_count
+                FROM fabrics f
+                LEFT JOIN order_items oi ON f.id = oi.inner_fabric_id
+                LEFT JOIN orders o ON oi.order_id = o.id
+                WHERE f.usage_type = '里布' AND oi.id IS NOT NULL {date_filter.replace('created_at', 'o.created_at') if date_filter else ''}
+                GROUP BY f.id, f.name, f.usage_type
+                ORDER BY usage_count DESC
+            """)
+            inner_results = cursor.fetchall()
+            
+            fabric_usage = []
+            for row in outer_results:
+                fabric_usage.append({
+                    'fabric_name': row[0],
+                    'usage_type': row[1],
+                    'usage_count': row[2]
+                })
+            
+            for row in inner_results:
+                fabric_usage.append({
+                    'fabric_name': row[0],
+                    'usage_type': row[1],
+                    'usage_count': row[2]
+                })
+            
+            conn.close()
+            return fabric_usage
+            
+        except Exception as e:
+            logger.error(f"获取面料使用数据时出错: {e}")
+            return []
+    
+    def _get_product_sales_data(self, date_filter: str) -> List[Dict]:
+        """获取商品销售数据"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # 现货商品销售
+            cursor.execute(f"""
+                SELECT 
+                    i.product_name,
+                    SUM(oi.quantity) as quantity,
+                    SUM(oi.quantity * oi.unit_price) as total_amount
+                FROM order_items oi
+                JOIN orders o ON oi.order_id = o.id
+                LEFT JOIN inventory i ON oi.inventory_id = i.id
+                WHERE oi.item_type = '现货' AND i.product_name IS NOT NULL {date_filter.replace('created_at', 'o.created_at') if date_filter else ''}
+                GROUP BY i.product_name
+                ORDER BY quantity DESC
+            """)
+            inventory_results = cursor.fetchall()
+            
+            # 定制商品销售
+            cursor.execute(f"""
+                SELECT 
+                    CASE 
+                        WHEN of.name IS NOT NULL AND if.name IS NOT NULL 
+                        THEN '定制商品(' || of.name || '+' || if.name || ')'
+                        ELSE '定制商品'
+                    END as product_name,
+                    SUM(oi.quantity) as quantity,
+                    SUM(oi.quantity * oi.unit_price) as total_amount
+                FROM order_items oi
+                JOIN orders o ON oi.order_id = o.id
+                LEFT JOIN fabrics of ON oi.outer_fabric_id = of.id
+                LEFT JOIN fabrics if ON oi.inner_fabric_id = if.id
+                WHERE oi.item_type = '定制' {date_filter.replace('created_at', 'o.created_at') if date_filter else ''}
+                GROUP BY of.name, if.name
+                ORDER BY quantity DESC
+            """)
+            custom_results = cursor.fetchall()
+            
+            product_sales = []
+            for row in inventory_results:
+                product_sales.append({
+                    'product_name': row[0],
+                    'quantity': row[1],
+                    'total_amount': float(row[2]) if row[2] else 0
+                })
+            
+            for row in custom_results:
+                product_sales.append({
+                    'product_name': row[0],
+                    'quantity': row[1],
+                    'total_amount': float(row[2]) if row[2] else 0
+                })
+            
+            conn.close()
+            return product_sales
+            
+        except Exception as e:
+            logger.error(f"获取商品销售数据时出错: {e}")
+            return []
+    
+    def _get_customer_activity_data(self, date_filter: str) -> List[Dict]:
+        """获取客户活跃度数据"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(f"""
+                SELECT 
+                    c.nickname,
+                    COUNT(o.id) as order_count,
+                    COALESCE(SUM(o.total_amount), 0) as total_spent
+                FROM customers c
+                LEFT JOIN orders o ON c.id = o.customer_id
+                WHERE o.id IS NOT NULL {date_filter.replace('created_at', 'o.created_at') if date_filter else ''}
+                GROUP BY c.id, c.nickname
+                ORDER BY order_count DESC
+            """)
+            results = cursor.fetchall()
+            
+            customer_activity = []
+            for row in results:
+                customer_activity.append({
+                    'nickname': row[0],
+                    'order_count': row[1],
+                    'total_spent': float(row[2]) if row[2] else 0
+                })
+            
+            conn.close()
+            return customer_activity
+            
+        except Exception as e:
+            logger.error(f"获取客户活跃度数据时出错: {e}")
+            return []
+    
+
     
     def get_order_by_id(self, order_id: int) -> Optional[Dict]:
         """根据ID获取订单详情"""

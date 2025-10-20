@@ -429,57 +429,81 @@ with st.sidebar:
 
 # 仪表板页面
 if selected == "📊 仪表板":
-    st.markdown("## 📊 业务概览")
+    st.markdown("## 📊 业务数据分析中心")
+    
+    # 统一时间段选择器 - 放在最顶部
+    st.markdown("### ⏰ 分析时间段")
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        time_period = st.selectbox(
+            "选择分析时间段",
+            ["全部时间", "近一周", "近一月", "近一季度", "近一年"],
+            key="global_time_period",
+            help="选择时间段后，下方所有分析数据都会基于该时间段进行统计"
+        )
+    with col2:
+        if st.button("🔄 刷新数据", help="重新加载所有分析数据"):
+            db.clear_cache()  # 清理缓存
+            st.rerun()
     
     # 显示加载状态
-    with st.spinner("正在加载数据..."):
-        # 获取统计数据
-        customers = db.get_customers()
-        orders = db.get_orders()
-        inventory_items = db.get_inventory_items()
-        fabrics = db.get_fabrics()
+    with st.spinner(f"正在加载{time_period}的数据..."):
+        # 获取统一时间段的分析数据
+        unified_data = db.get_unified_dashboard_data(time_period)
     
-    # 显示关键指标 - 使用新的UI组件
+    # 关键指标概览
+    st.markdown("### 📊 关键指标概览")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        create_metric_card("客户总数", str(len(customers)), icon="👥")
+        create_metric_card(
+            f"{time_period}订单数", 
+            str(unified_data['summary']['total_orders']), 
+            icon="📋"
+        )
     
     with col2:
-        create_metric_card("订单总数", str(len(orders)), icon="📋")
+        create_metric_card(
+            f"{time_period}销售额", 
+            f"¥{unified_data['summary']['total_amount']:.2f}", 
+            icon="💰"
+        )
     
     with col3:
-        total_revenue = sum([order['total_amount'] for order in orders if order['total_amount']])
-        # 计算收入变化（这里简化为示例）
-        revenue_delta = "+12.5%" if total_revenue > 0 else "0%"
-        create_metric_card("总收入", f"¥{total_revenue:.2f}", revenue_delta, "💰")
+        create_metric_card(
+            "活跃客户数", 
+            str(unified_data['summary']['active_customers']), 
+            icon="👥"
+        )
     
     with col4:
-        total_inventory_value = sum([item['price'] * item['quantity'] for item in inventory_items])
-        create_metric_card("库存价值", f"¥{total_inventory_value:.2f}", icon="📦")
+        avg_order_value = unified_data['summary']['total_amount'] / unified_data['summary']['total_orders'] if unified_data['summary']['total_orders'] > 0 else 0
+        create_metric_card(
+            "平均订单价值", 
+            f"¥{avg_order_value:.2f}", 
+            icon="📊"
+        )
     
-    # 图表展示
-    if orders:
-        st.markdown("### 📈 订单趋势")
-        df_orders = pd.DataFrame(orders)
-        df_orders['created_at'] = pd.to_datetime(df_orders['created_at'])
-        df_orders['date'] = df_orders['created_at'].dt.date
-        
-        daily_orders = df_orders.groupby('date').agg({
-            'id': 'count',
-            'total_amount': 'sum'
-        }).reset_index()
-        daily_orders.columns = ['日期', '订单数量', '销售额']
-        
+    # 销售趋势分析
+    st.markdown("### 📈 销售趋势分析")
+    if unified_data['daily_sales']:
         col1, col2 = st.columns(2)
+        
         with col1:
-            # 现代化的线图样式
-            fig1 = px.line(daily_orders, x='日期', y='订单数量', title='每日订单数量')
-            fig1.update_traces(
+            # 销售趋势图
+            df_sales = pd.DataFrame(unified_data['daily_sales'])
+            fig_trend = px.line(
+                df_sales, 
+                x='date', 
+                y='amount',
+                title=f'{time_period} - 每日销售额趋势',
+                markers=True
+            )
+            fig_trend.update_traces(
                 line=dict(color='#2E86AB', width=3),
                 marker=dict(size=8, color='#2E86AB')
             )
-            fig1.update_layout(
+            fig_trend.update_layout(
                 plot_bgcolor='rgba(0,0,0,0)',
                 paper_bgcolor='rgba(0,0,0,0)',
                 title_font_size=16,
@@ -488,17 +512,22 @@ if selected == "📊 仪表板":
                 xaxis=dict(showgrid=True, gridcolor='#E2E8F0'),
                 yaxis=dict(showgrid=True, gridcolor='#E2E8F0')
             )
-            st.plotly_chart(fig1, use_container_width=True)
+            st.plotly_chart(fig_trend, use_container_width=True)
         
         with col2:
-            # 现代化的柱状图样式
-            fig2 = px.bar(daily_orders, x='日期', y='销售额', title='每日销售额')
-            fig2.update_traces(
+            # 订单数量趋势
+            fig_orders = px.bar(
+                df_sales, 
+                x='date', 
+                y='order_count',
+                title=f'{time_period} - 每日订单数量',
+            )
+            fig_orders.update_traces(
                 marker_color='#F18F01',
                 marker_line_color='#F18F01',
                 marker_line_width=1
             )
-            fig2.update_layout(
+            fig_orders.update_layout(
                 plot_bgcolor='rgba(0,0,0,0)',
                 paper_bgcolor='rgba(0,0,0,0)',
                 title_font_size=16,
@@ -507,29 +536,25 @@ if selected == "📊 仪表板":
                 xaxis=dict(showgrid=True, gridcolor='#E2E8F0'),
                 yaxis=dict(showgrid=True, gridcolor='#E2E8F0')
             )
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig_orders, use_container_width=True)
     else:
-        st.info("📊 暂无订单数据，无法显示趋势图表")
+        st.info(f"📊 {time_period}暂无销售数据")
     
-    # 面料分析
+    # 面料使用分析
     st.markdown("### 🧵 面料使用分析")
-    
-    # 获取面料使用数据
-    fabric_usage_data = db.get_fabric_usage_analysis()
-    
-    if fabric_usage_data:
+    if unified_data['fabric_usage']:
         col1, col2 = st.columns(2)
         
         with col1:
             # 表布使用情况
-            outer_fabric_data = [item for item in fabric_usage_data if item['usage_type'] == '表布']
+            outer_fabric_data = [item for item in unified_data['fabric_usage'] if item['usage_type'] == '表布']
             if outer_fabric_data:
                 df_outer = pd.DataFrame(outer_fabric_data)
                 fig_outer = px.pie(
                     df_outer, 
                     values='usage_count', 
                     names='fabric_name',
-                    title='表布使用分布',
+                    title=f'{time_period} - 表布使用分布',
                     color_discrete_sequence=px.colors.qualitative.Set3
                 )
                 fig_outer.update_layout(
@@ -541,18 +566,18 @@ if selected == "📊 仪表板":
                 )
                 st.plotly_chart(fig_outer, use_container_width=True)
             else:
-                st.info("暂无表布使用数据")
+                st.info(f"{time_period}暂无表布使用数据")
         
         with col2:
             # 里布使用情况
-            inner_fabric_data = [item for item in fabric_usage_data if item['usage_type'] == '里布']
+            inner_fabric_data = [item for item in unified_data['fabric_usage'] if item['usage_type'] == '里布']
             if inner_fabric_data:
                 df_inner = pd.DataFrame(inner_fabric_data)
                 fig_inner = px.pie(
                     df_inner, 
                     values='usage_count', 
                     names='fabric_name',
-                    title='里布使用分布',
+                    title=f'{time_period} - 里布使用分布',
                     color_discrete_sequence=px.colors.qualitative.Pastel
                 )
                 fig_inner.update_layout(
@@ -564,234 +589,138 @@ if selected == "📊 仪表板":
                 )
                 st.plotly_chart(fig_inner, use_container_width=True)
             else:
-                st.info("暂无里布使用数据")
+                st.info(f"{time_period}暂无里布使用数据")
     else:
-        st.info("暂无面料使用数据")
+        st.info(f"{time_period}暂无面料使用数据")
     
-    # 销售分析
-    st.markdown("### 📈 销售情况分析")
-    
-    # 时间段选择
-    time_period = st.selectbox(
-        "选择分析时间段",
-        ["近一周", "近一月", "近一季度", "近一年"],
-        key="sales_time_period"
-    )
-    
-    # 获取销售数据
-    sales_data = db.get_sales_analysis(time_period)
-    
-    if sales_data and sales_data['orders']:
+    # 商品销售分析
+    st.markdown("### 🛍️ 商品销售分析")
+    if unified_data['product_sales']:
         col1, col2 = st.columns(2)
         
         with col1:
-            # 销售趋势图
-            df_sales = pd.DataFrame(sales_data['daily_sales'])
-            if not df_sales.empty:
-                fig_trend = px.line(
-                    df_sales, 
-                    x='date', 
-                    y='amount',
-                    title=f'{time_period}销售趋势',
-                    markers=True
-                )
-                fig_trend.update_traces(
-                    line=dict(color='#2E86AB', width=3),
-                    marker=dict(size=8, color='#2E86AB')
-                )
-                fig_trend.update_layout(
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    title_font_size=16,
-                    title_font_color='#2D3748',
-                    font=dict(color='#2D3748'),
-                    xaxis=dict(showgrid=True, gridcolor='#E2E8F0'),
-                    yaxis=dict(showgrid=True, gridcolor='#E2E8F0')
-                )
-                st.plotly_chart(fig_trend, use_container_width=True)
-        
-        with col2:
             # 商品销售排行
-            df_products = pd.DataFrame(sales_data['product_sales'])
-            if not df_products.empty:
-                fig_products = px.bar(
-                    df_products.head(10), 
-                    x='quantity', 
-                    y='product_name',
-                    title=f'{time_period}商品销售排行',
-                    orientation='h'
-                )
-                fig_products.update_traces(
-                    marker_color='#F18F01',
-                    marker_line_color='#F18F01',
-                    marker_line_width=1
-                )
-                fig_products.update_layout(
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    title_font_size=16,
-                    title_font_color='#2D3748',
-                    font=dict(color='#2D3748'),
-                    xaxis=dict(showgrid=True, gridcolor='#E2E8F0'),
-                    yaxis=dict(showgrid=True, gridcolor='#E2E8F0')
-                )
-                st.plotly_chart(fig_products, use_container_width=True)
-        
-        # 销售统计摘要
-        st.markdown("#### 📊 销售统计摘要")
-        summary_col1, summary_col2, summary_col3, summary_col4 = st.columns(4)
-        
-        with summary_col1:
-            create_metric_card(
-                f"{time_period}订单数", 
-                str(sales_data['total_orders']), 
-                icon="📋"
+            df_products = pd.DataFrame(unified_data['product_sales'])
+            fig_products = px.bar(
+                df_products.head(10), 
+                x='quantity', 
+                y='product_name',
+                title=f'{time_period} - 商品销售排行',
+                orientation='h'
             )
-        
-        with summary_col2:
-            create_metric_card(
-                f"{time_period}销售额", 
-                f"¥{sales_data['total_amount']:.2f}", 
-                icon="💰"
+            fig_products.update_traces(
+                marker_color='#10B981',
+                marker_line_color='#10B981',
+                marker_line_width=1
             )
-        
-        with summary_col3:
-            avg_order_value = sales_data['total_amount'] / sales_data['total_orders'] if sales_data['total_orders'] > 0 else 0
-            create_metric_card(
-                "平均订单价值", 
-                f"¥{avg_order_value:.2f}", 
-                icon="📊"
-            )
-        
-        with summary_col4:
-            create_metric_card(
-                "商品种类数", 
-                str(len(sales_data['product_sales'])), 
-                icon="🛍️"
-            )
-    else:
-        st.info(f"暂无{time_period}的销售数据")
-    
-    # 客户分析
-    st.markdown("### 👥 客户分析")
-    
-    customer_analysis = db.get_customer_analysis()
-    
-    if customer_analysis:
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # 客户积分分布
-            if customer_analysis['points_distribution']:
-                df_points = pd.DataFrame(customer_analysis['points_distribution'])
-                fig_points = px.histogram(
-                    df_points, 
-                    x='points',
-                    title='客户积分分布',
-                    nbins=10
-                )
-                fig_points.update_traces(
-                    marker_color='#8B5CF6',
-                    marker_line_color='#8B5CF6',
-                    marker_line_width=1
-                )
-                fig_points.update_layout(
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    title_font_size=16,
-                    title_font_color='#2D3748',
-                    font=dict(color='#2D3748'),
-                    xaxis=dict(showgrid=True, gridcolor='#E2E8F0'),
-                    yaxis=dict(showgrid=True, gridcolor='#E2E8F0')
-                )
-                st.plotly_chart(fig_points, use_container_width=True)
-            else:
-                st.info("暂无客户积分数据")
-        
-        with col2:
-            # 客户订单频次
-            if customer_analysis['order_frequency']:
-                df_freq = pd.DataFrame(customer_analysis['order_frequency'])
-                fig_freq = px.bar(
-                    df_freq.head(10), 
-                    x='order_count', 
-                    y='nickname',
-                    title='客户订单频次排行',
-                    orientation='h'
-                )
-                fig_freq.update_traces(
-                    marker_color='#10B981',
-                    marker_line_color='#10B981',
-                    marker_line_width=1
-                )
-                fig_freq.update_layout(
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    title_font_size=16,
-                    title_font_color='#2D3748',
-                    font=dict(color='#2D3748'),
-                    xaxis=dict(showgrid=True, gridcolor='#E2E8F0'),
-                    yaxis=dict(showgrid=True, gridcolor='#E2E8F0')
-                )
-                st.plotly_chart(fig_freq, use_container_width=True)
-            else:
-                st.info("暂无客户订单数据")
-    
-    # 订单状态分析
-    st.markdown("### 📋 订单状态分析")
-    
-    order_status_data = db.get_order_status_analysis()
-    
-    if order_status_data:
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # 订单状态分布
-            df_status = pd.DataFrame(order_status_data)
-            fig_status = px.pie(
-                df_status, 
-                values='count', 
-                names='status_name',
-                title='订单状态分布',
-                color_discrete_sequence=px.colors.qualitative.Set2
-            )
-            fig_status.update_layout(
+            fig_products.update_layout(
                 plot_bgcolor='rgba(0,0,0,0)',
                 paper_bgcolor='rgba(0,0,0,0)',
                 title_font_size=16,
                 title_font_color='#2D3748',
-                font=dict(color='#2D3748')
+                font=dict(color='#2D3748'),
+                xaxis=dict(showgrid=True, gridcolor='#E2E8F0'),
+                yaxis=dict(showgrid=True, gridcolor='#E2E8F0')
             )
-            st.plotly_chart(fig_status, use_container_width=True)
+            st.plotly_chart(fig_products, use_container_width=True)
         
         with col2:
-            # 订单状态统计表
-            st.markdown("#### 📊 订单状态详情")
-            df_status_table = pd.DataFrame(order_status_data)
-            df_status_table['percentage'] = (df_status_table['count'] / df_status_table['count'].sum() * 100).round(2)
-            
-            st.dataframe(
-                df_status_table[['status_name', 'count', 'percentage']], 
-                use_container_width=True,
-                column_config={
-                    "status_name": "订单状态",
-                    "count": st.column_config.NumberColumn(
-                        "数量",
-                        help="该状态的订单数量",
-                        format="%d 个"
-                    ),
-                    "percentage": st.column_config.NumberColumn(
-                        "占比",
-                        help="该状态占总订单的百分比",
-                        format="%.2f%%"
-                    )
-                }
+            # 商品销售额排行
+            df_products_amount = df_products.copy()
+            df_products_amount = df_products_amount.sort_values('total_amount', ascending=True)
+            fig_amount = px.bar(
+                df_products_amount.tail(10), 
+                x='total_amount', 
+                y='product_name',
+                title=f'{time_period} - 商品销售额排行',
+                orientation='h'
             )
+            fig_amount.update_traces(
+                marker_color='#8B5CF6',
+                marker_line_color='#8B5CF6',
+                marker_line_width=1
+            )
+            fig_amount.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                title_font_size=16,
+                title_font_color='#2D3748',
+                font=dict(color='#2D3748'),
+                xaxis=dict(showgrid=True, gridcolor='#E2E8F0'),
+                yaxis=dict(showgrid=True, gridcolor='#E2E8F0')
+            )
+            st.plotly_chart(fig_amount, use_container_width=True)
     else:
-        st.info("暂无订单状态数据")
+        st.info(f"{time_period}暂无商品销售数据")
+    
+    # 客户活跃度分析
+    st.markdown("### 👥 客户活跃度分析")
+    if unified_data['customer_activity']:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # 客户订单频次
+            df_customers = pd.DataFrame(unified_data['customer_activity'])
+            if not df_customers.empty:
+                fig_customers = px.bar(
+                    df_customers.head(10), 
+                    x='order_count', 
+                    y='nickname',
+                    title=f'{time_period} - 客户活跃度排行',
+                    orientation='h'
+                )
+                fig_customers.update_traces(
+                    marker_color='#EF4444',
+                    marker_line_color='#EF4444',
+                    marker_line_width=1
+                )
+                fig_customers.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    title_font_size=16,
+                    title_font_color='#2D3748',
+                    font=dict(color='#2D3748'),
+                    xaxis=dict(showgrid=True, gridcolor='#E2E8F0'),
+                    yaxis=dict(showgrid=True, gridcolor='#E2E8F0')
+                )
+                st.plotly_chart(fig_customers, use_container_width=True)
+            else:
+                st.info(f"{time_period}暂无客户活跃数据")
+        
+        with col2:
+            # 客户消费金额排行
+            df_customers_amount = df_customers.copy()
+            df_customers_amount = df_customers_amount.sort_values('total_spent', ascending=True)
+            fig_customer_amount = px.bar(
+                df_customers_amount.tail(10), 
+                x='total_spent', 
+                y='nickname',
+                title=f'{time_period} - 客户消费金额排行',
+                orientation='h'
+            )
+            fig_customer_amount.update_traces(
+                marker_color='#F59E0B',
+                marker_line_color='#F59E0B',
+                marker_line_width=1
+            )
+            fig_customer_amount.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                title_font_size=16,
+                title_font_color='#2D3748',
+                font=dict(color='#2D3748'),
+                xaxis=dict(showgrid=True, gridcolor='#E2E8F0'),
+                yaxis=dict(showgrid=True, gridcolor='#E2E8F0')
+            )
+            st.plotly_chart(fig_customer_amount, use_container_width=True)
+    else:
+        st.info(f"{time_period}暂无客户活跃数据")
+    
+
     
     # 库存预警 - 使用新的UI组件
     st.markdown("### ⚠️ 库存预警")
+    inventory_items = db.get_inventory_items()
     low_stock_items = [item for item in inventory_items if item['quantity'] < 5]
     if low_stock_items:
         show_warning_message(f"发现 {len(low_stock_items)} 个商品库存不足！")
