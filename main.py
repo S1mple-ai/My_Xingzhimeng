@@ -2092,12 +2092,12 @@ elif selected == "📋 订单管理":
                     st.markdown("---")
                     st.markdown("### 🎁 积分奖励")
                     
-                    # 计算建议积分（订单金额的1%）
-                    suggested_points = max(1, int(order_info['total_amount'] * 0.01))
+                    # 计算建议积分（等于订单金额）
+                    suggested_points = max(1, int(order_info['total_amount']))
                     
                     st.info(f"💡 为客户 **{order_info['customer_name']}** 奖励积分？")
                     st.write(f"📊 订单金额: ¥{order_info['total_amount']:.2f}")
-                    st.write(f"⭐ 建议积分: {suggested_points} 分（订单金额的1%）")
+                    st.write(f"⭐ 建议积分: {suggested_points} 分（等于订单金额）")
                     
                     col1, col2, col3 = st.columns([2, 2, 2])
                     
