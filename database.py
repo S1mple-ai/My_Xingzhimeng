@@ -176,6 +176,31 @@ class DatabaseManager:
             # 字段已存在，忽略错误
             pass
         
+        # 为已存在的orders表添加points_awarded字段（如果不存在）
+        try:
+            cursor.execute("ALTER TABLE orders ADD COLUMN points_awarded BOOLEAN DEFAULT FALSE")
+        except sqlite3.OperationalError:
+            # 字段已存在，忽略错误
+            pass
+        
+        # 积分历史记录表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS points_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                customer_id INTEGER NOT NULL,
+                points_change INTEGER NOT NULL,
+                points_before INTEGER NOT NULL,
+                points_after INTEGER NOT NULL,
+                change_type TEXT CHECK(change_type IN ('manual', 'order', 'formula')) NOT NULL,
+                order_id INTEGER,
+                reason TEXT,
+                operator TEXT DEFAULT 'system',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (customer_id) REFERENCES customers (id),
+                FOREIGN KEY (order_id) REFERENCES orders (id)
+            )
+        ''')
+        
         # 订单商品表
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS order_items (
@@ -935,6 +960,115 @@ class DatabaseManager:
         )
         conn.commit()
         conn.close()
+    
+    def add_points_history(self, customer_id: int, points_change: int, points_before: int, 
+                          points_after: int, change_type: str, order_id: int = None, 
+                          reason: str = "", operator: str = "system"):
+        """添加积分历史记录"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO points_history 
+                (customer_id, points_change, points_before, points_after, change_type, order_id, reason, operator)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (customer_id, points_change, points_before, points_after, change_type, order_id, reason, operator))
+            history_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+            logger.info(f"Added points history for customer {customer_id}: {points_change} points")
+            return history_id
+        except sqlite3.Error as e:
+            logger.error(f"Error adding points history for customer {customer_id}: {e}")
+            if 'conn' in locals():
+                conn.close()
+            raise Exception(f"添加积分历史记录失败: {str(e)}")
+    
+    def get_customer_points_history(self, customer_id: int) -> List[Dict]:
+        """获取客户积分历史记录"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT ph.*, o.total_amount as order_amount
+                FROM points_history ph
+                LEFT JOIN orders o ON ph.order_id = o.id
+                WHERE ph.customer_id = ?
+                ORDER BY ph.created_at DESC
+            ''', (customer_id,))
+            
+            history = []
+            for row in cursor.fetchall():
+                history.append({
+                    'id': row[0],
+                    'customer_id': row[1],
+                    'points_change': row[2],
+                    'points_before': row[3],
+                    'points_after': row[4],
+                    'change_type': row[5],
+                    'order_id': row[6],
+                    'reason': row[7],
+                    'operator': row[8],
+                    'created_at': row[9],
+                    'order_amount': row[10] if row[10] else None
+                })
+            conn.close()
+            return history
+        except sqlite3.Error as e:
+            logger.error(f"Error getting points history for customer {customer_id}: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return []
+    
+    def update_customer_points_with_history(self, customer_id: int, points_change: int, 
+                                          change_type: str, order_id: int = None, 
+                                          reason: str = "", operator: str = "system"):
+        """更新客户积分并记录历史"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # 获取当前积分
+            cursor.execute("SELECT points FROM customers WHERE id = ?", (customer_id,))
+            result = cursor.fetchone()
+            if not result:
+                raise Exception(f"客户ID {customer_id} 不存在")
+            
+            points_before = result[0]
+            points_after = points_before + points_change
+            
+            # 确保积分不为负数
+            if points_after < 0:
+                raise Exception(f"积分不能为负数，当前积分: {points_before}，尝试变化: {points_change}")
+            
+            # 更新客户积分
+            cursor.execute(
+                "UPDATE customers SET points = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (points_after, customer_id)
+            )
+            
+            # 添加历史记录
+            cursor.execute('''
+                INSERT INTO points_history 
+                (customer_id, points_change, points_before, points_after, change_type, order_id, reason, operator)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (customer_id, points_change, points_before, points_after, change_type, order_id, reason, operator))
+            
+            conn.commit()
+            conn.close()
+            
+            # 清理客户相关缓存
+            self.clear_cache("customers")
+            
+            logger.info(f"Updated customer {customer_id} points: {points_before} -> {points_after} ({points_change:+d})")
+            return points_after
+            
+        except sqlite3.Error as e:
+            logger.error(f"Error updating customer points with history: {e}")
+            if 'conn' in locals():
+                conn.rollback()
+                conn.close()
+            raise Exception(f"更新客户积分失败: {str(e)}")
     
     # 面料管理方法
     def add_fabric(self, name: str, material_type: str, usage_type: str, image_path: str = None) -> int:

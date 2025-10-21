@@ -5,7 +5,7 @@ from database import DatabaseManager
 from streamlit_option_menu import option_menu
 import plotly.express as px
 import plotly.graph_objects as go
-from upload_components import drag_drop_image_uploader, drag_drop_media_uploader, display_uploaded_media
+from upload_components import drag_drop_image_uploader, drag_drop_media_uploader, display_uploaded_media, enhanced_image_preview
 from ui_components import (
     show_loading_spinner, show_progress_bar, show_success_message, 
     show_error_message, show_warning_message, create_metric_card,
@@ -36,6 +36,81 @@ def init_services():
     return db, dashboard_service, export_service, cache_manager
 
 db, dashboard_service, export_service, cache_manager = init_services()
+
+# 安全的图片显示函数
+def safe_image_display(uploaded_file, width=200, caption="图片预览"):
+    """安全地显示上传的图片，包含错误处理"""
+    if uploaded_file is None:
+        st.info("📷 暂无图片")
+        return
+    
+    try:
+        # 检查文件是否有效
+        if hasattr(uploaded_file, 'read'):
+            # 重置文件指针到开始位置
+            uploaded_file.seek(0)
+            st.image(uploaded_file, width=width, caption=caption)
+        else:
+            st.warning("⚠️ 图片文件格式不支持")
+    except Exception as e:
+        st.error(f"❌ 图片显示失败: {str(e)}")
+        st.info("💡 请尝试上传 JPG、PNG 或 GIF 格式的图片")
+
+# 积分公式解析函数
+def parse_points_formula(formula, current_points):
+    """
+    解析积分公式，支持 +数字、-数字、=数字 三种格式
+    
+    Args:
+        formula (str): 输入的公式字符串
+        current_points (int): 当前积分
+    
+    Returns:
+        tuple: (是否成功, 新积分值, 错误信息)
+    """
+    if not formula or not formula.strip():
+        return False, current_points, "公式不能为空"
+    
+    formula = formula.strip()
+    
+    try:
+        # 处理 =数字 格式（直接设置积分）
+        if formula.startswith('='):
+            new_points = int(formula[1:])
+            if new_points < 0:
+                return False, current_points, "积分不能为负数"
+            return True, new_points, ""
+        
+        # 处理 +数字 格式（增加积分）
+        elif formula.startswith('+'):
+            points_to_add = int(formula[1:])
+            new_points = current_points + points_to_add
+            if new_points < 0:
+                return False, current_points, "积分不能为负数"
+            return True, new_points, ""
+        
+        # 处理 -数字 格式（减少积分）
+        elif formula.startswith('-'):
+            points_to_subtract = int(formula[1:])
+            new_points = current_points - points_to_subtract
+            if new_points < 0:
+                return False, current_points, "积分不能为负数"
+            return True, new_points, ""
+        
+        # 如果只是数字，当作 =数字 处理
+        elif formula.isdigit():
+            new_points = int(formula)
+            if new_points < 0:
+                return False, current_points, "积分不能为负数"
+            return True, new_points, ""
+        
+        else:
+            return False, current_points, "公式格式错误，请使用 +数字、-数字 或 =数字 格式"
+    
+    except ValueError:
+        return False, current_points, "请输入有效的数字"
+    except Exception as e:
+        return False, current_points, f"公式解析错误: {str(e)}"
 
 # 执行自动备份检查（仅在应用启动时执行一次）
 if 'backup_checked' not in st.session_state:
@@ -257,25 +332,54 @@ if st.session_state.get('show_edit_fabric', False):
                                            ["表布", "里布"], 
                                            index=["表布", "里布"].index(fabric_data.get('usage_type', '表布')) if fabric_data.get('usage_type') in ["表布", "里布"] else 0)
                 
+                # 图片上传区域
+                st.markdown("---")
+                st.markdown("**🖼️ 面料图片**")
+                
+                # 显示当前图片
+                current_image_path = fabric_data.get('image_path', '')
+                if current_image_path and os.path.exists(current_image_path):
+                    st.markdown("**当前图片:**")
+                    st.image(current_image_path, width=200)
+                else:
+                    st.markdown("*当前无图片*")
+                
+                # 上传新图片
+                uploaded_file = drag_drop_image_uploader(
+                    key=f"fabric_edit_image_{fabric_data.get('id', 'unknown')}",
+                    label="拖拽新图片到此处或点击上传（可选）",
+                    help_text="支持 JPG, PNG, GIF 格式"
+                )
+                
+                # 显示新上传的图片预览
+                if uploaded_file:
+                    st.markdown("**新图片预览:**")
+                    safe_image_display(uploaded_file, width=200, caption="新上传的面料图片")
+                
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     if st.form_submit_button("💾 保存修改", type="primary"):
                         try:
+                            # 处理图片上传
+                            final_image_path = fabric_data.get('image_path', '')
+                            if uploaded_file:
+                                final_image_path = save_uploaded_file(uploaded_file, "fabric")
+                            
                             success = db.update_fabric(
                                 fabric_data['id'],
                                 new_name,
                                 new_material,
                                 new_usage,
-                                fabric_data.get('image_path', '')
+                                final_image_path
                             )
                             if success:
-                                st.success("面料更新成功！")
+                                st.markdown('<div class="success-message">✅ 面料更新成功！</div>', unsafe_allow_html=True)
                                 st.session_state.show_edit_fabric = False
                                 st.rerun()
                             else:
-                                st.error("更新失败！")
+                                st.markdown('<div class="error-message">❌ 更新失败！</div>', unsafe_allow_html=True)
                         except Exception as e:
-                            st.error(f"更新失败: {str(e)}")
+                            st.markdown(f'<div class="error-message">❌ 更新失败: {str(e)}</div>', unsafe_allow_html=True)
                 with col2:
                     if st.form_submit_button("❌ 取消"):
                         st.session_state.show_edit_fabric = False
@@ -319,6 +423,26 @@ if st.session_state.get('show_edit_inventory', False):
                 with col1:
                     new_name = st.text_input("商品名称", value=inventory_data.get('product_name', ''))
                     new_price = st.number_input("价格", value=float(inventory_data.get('price', 0)), min_value=0.0, step=0.01)
+                    
+                    # 显示当前图片
+                    current_image_path = inventory_data.get('image_path', '')
+                    if current_image_path and os.path.exists(current_image_path):
+                        st.markdown("**当前图片:**")
+                        st.image(current_image_path, width=150)
+                    
+                    # 图片更换 - 支持拖拽上传
+                    st.markdown("**🖼️ 更换图片**")
+                    uploaded_file = drag_drop_image_uploader(
+                        key=f"edit_inventory_image_{inventory_data.get('id', 0)}",
+                        label="拖拽新图片到此处或点击上传",
+                        help_text="支持 JPG, PNG, GIF 格式，留空则保持原图片"
+                    )
+                    
+                    # 显示新上传的图片预览
+                    if uploaded_file:
+                        st.markdown("**新图片预览:**")
+                        safe_image_display(uploaded_file, width=150, caption="新上传的商品图片")
+                        
                 with col2:
                     new_quantity = st.number_input("库存数量", value=int(inventory_data.get('quantity', 0)), min_value=0, step=1)
                 
@@ -328,13 +452,19 @@ if st.session_state.get('show_edit_inventory', False):
                 with col1:
                     if st.form_submit_button("💾 保存修改", type="primary"):
                         try:
+                            # 处理图片更新
+                            final_image_path = inventory_data.get('image_path', '')
+                            if uploaded_file:
+                                # 保存新图片
+                                final_image_path = save_uploaded_file(uploaded_file, "inventory")
+                            
                             success = db.update_inventory_item(
                                 inventory_data['id'],
                                 new_name,
                                 new_description,
                                 new_price,
                                 new_quantity,
-                                inventory_data.get('image_path', '')
+                                final_image_path
                             )
                             if success:
                                 st.success("库存更新成功！")
@@ -827,17 +957,59 @@ elif selected == "👥 客户管理":
                     
                     with col2:
                         new_notes = st.text_area("备注", value=customer['notes'] or "", key=f"notes_{customer['id']}")
-                        new_points = st.number_input("积分", value=customer['points'], min_value=0, step=1, key=f"points_{customer['id']}", format="%d")
+                        st.write(f"当前积分: **{customer['points']}**")
+                        points_formula = st.text_input(
+                            "积分公式", 
+                            placeholder="输入 +数字、-数字 或 =数字", 
+                            key=f"points_formula_{customer['id']}",
+                            help="例如: +50 (增加50分), -20 (减少20分), =100 (设为100分)"
+                        )
+                        
+                        # 积分历史查看按钮
+                        if st.button("📊 查看积分历史", key=f"history_{customer['id']}"):
+                            st.session_state[f"show_history_{customer['id']}"] = not st.session_state.get(f"show_history_{customer['id']}", False)
+                        
+                        # 显示积分历史
+                        if st.session_state.get(f"show_history_{customer['id']}", False):
+                            history = db.get_customer_points_history(customer['id'])
+                            if history:
+                                st.write("**积分历史记录:**")
+                                for record in history[:5]:  # 只显示最近5条
+                                    change_text = f"+{record['points_change']}" if record['points_change'] > 0 else str(record['points_change'])
+                                    st.write(f"• {record['created_at'][:16]} | {change_text} | {record['reason']} | 操作者: {record['operator']}")
+                                if len(history) > 5:
+                                    st.write(f"... 还有 {len(history) - 5} 条记录")
+                            else:
+                                st.write("暂无积分历史记录")
                     
                     with col3:
                         if create_action_button("💾 更新", f"update_{customer['id']}", "primary"):
                             try:
+                                # 更新基本信息
                                 db.update_customer(customer['id'], new_nickname, new_phone, new_notes)
-                                # 更新积分
-                                points_diff = new_points - customer['points']
-                                if points_diff != 0:
-                                    db.update_customer_points(customer['id'], points_diff)
-                                show_success_message("客户信息已更新")
+                                
+                                # 处理积分更新
+                                if points_formula and points_formula.strip():
+                                    success, new_points, error_msg = parse_points_formula(points_formula, customer['points'])
+                                    if success:
+                                        points_change = new_points - customer['points']
+                                        if points_change != 0:
+                                            db.update_customer_points_with_history(
+                                                customer['id'], 
+                                                points_change,
+                                                change_type="manual",
+                                                reason=f"手动调整: {points_formula}",
+                                                operator="管理员"
+                                            )
+                                            show_success_message(f"客户信息已更新，积分从 {customer['points']} 变更为 {new_points}")
+                                        else:
+                                            show_success_message("客户信息已更新")
+                                    else:
+                                        show_error_message(f"积分公式错误: {error_msg}")
+                                        continue
+                                else:
+                                    show_success_message("客户信息已更新")
+                                
                                 st.rerun()
                             except Exception as e:
                                 show_error_message(f"更新客户信息失败: {str(e)}")
@@ -996,25 +1168,34 @@ elif selected == "🧵 面料管理":
             
             # 图片上传区域
             st.markdown("---")
-            uploaded_file, image_path = drag_drop_image_uploader(
-                key="fabric_image", 
-                label="📷 面料图片", 
-                help_text="支持拖拽上传 PNG, JPG, JPEG, GIF 等格式的图片",
-                category="fabric"
+            st.markdown("**🖼️ 面料图片**")
+            uploaded_file = drag_drop_image_uploader(
+                key="fabric_image_upload",
+                label="拖拽图片到此处或点击上传",
+                help_text="支持 JPG, PNG, GIF 格式"
             )
+            
+            # 显示上传的图片预览
+            if uploaded_file:
+                safe_image_display(uploaded_file, width=200, caption="面料图片预览")
             
             submitted = st.form_submit_button("➕ 添加面料", use_container_width=True)
             
             if submitted:
                 if name:
                     try:
+                        # 处理图片上传
+                        image_path = ""
+                        if uploaded_file:
+                            image_path = save_uploaded_file(uploaded_file, "fabric")
+                        
                         fabric_id = db.add_fabric(name, material_type, usage_type, image_path)
-                        show_success_message(f'面料 "{name}" 添加成功！面料ID: {fabric_id}')
+                        st.markdown(f'<div class="success-message">✅ 面料 "{name}" 添加成功！面料ID: {fabric_id}</div>', unsafe_allow_html=True)
                         st.rerun()
                     except Exception as e:
-                        show_error_message(f"添加面料失败: {str(e)}")
+                        st.markdown(f'<div class="error-message">❌ 添加面料失败: {str(e)}</div>', unsafe_allow_html=True)
                 else:
-                    show_error_message("请输入面料名称")
+                    st.markdown('<div class="error-message">❌ 请输入面料名称</div>', unsafe_allow_html=True)
 
 # 库存管理页面
 elif selected == "📦 库存管理":
@@ -1150,7 +1331,18 @@ elif selected == "📦 库存管理":
             with col1:
                 product_name = st.text_input("📦 商品名称*", placeholder="请输入商品名称")
                 description = st.text_area("📝 商品描述", placeholder="商品详细描述")
-                image_path = st.text_input("🖼️ 图片路径", placeholder="可选")
+                
+                # 图片上传 - 支持拖拽上传
+                st.markdown("**🖼️ 商品图片**")
+                uploaded_file = drag_drop_image_uploader(
+                    key="inventory_image_upload",
+                    label="拖拽图片到此处或点击上传",
+                    help_text="支持 JPG, PNG, GIF 格式"
+                )
+                
+                # 显示上传的图片预览
+                if uploaded_file:
+                    safe_image_display(uploaded_file, width=200, caption="商品图片预览")
             
             with col2:
                 price = st.number_input("💰 价格*", min_value=0.0, step=0.01, format="%.2f")
@@ -1160,6 +1352,11 @@ elif selected == "📦 库存管理":
             
             if submitted:
                 if product_name:
+                    # 处理图片上传
+                    image_path = ""
+                    if uploaded_file:
+                        image_path = save_uploaded_file(uploaded_file, "inventory")
+                    
                     item_id = db.add_inventory_item(product_name, description, price, quantity, image_path)
                     st.markdown(f'<div class="success-message">✅ 商品 "{product_name}" 添加成功！</div>', unsafe_allow_html=True)
                     st.rerun()
@@ -1532,6 +1729,79 @@ elif selected == "📋 订单管理":
                                             st.write(f"  里布: {item['inner_fabric_name']}")
                                     if item['notes']:
                                         st.write(f"  备注: {item['notes']}")
+                            
+                            # 积分操作区域
+                            st.markdown("---")
+                            st.markdown("**💰 积分操作:**")
+                            
+                            # 检查订单是否已完成且未加过积分
+                            points_awarded = order.get('points_awarded', False)
+                            order_completed = order['status'] == 'completed'
+                            
+                            if order_completed and not points_awarded:
+                                # 计算建议积分（订单金额的1%，向下取整）
+                                suggested_points = int(order['total_amount'] * 0.01)
+                                
+                                col_points1, col_points2 = st.columns([2, 1])
+                                
+                                with col_points1:
+                                    points_to_award = st.number_input(
+                                        f"给客户加积分 (建议: {suggested_points}分)", 
+                                        min_value=0, 
+                                        value=suggested_points, 
+                                        step=1,
+                                        key=f"points_input_{order['id']}"
+                                    )
+                                
+                                with col_points2:
+                                    if st.button(f"🎁 加积分", key=f"award_points_{order['id']}"):
+                                        if points_to_award > 0:
+                                            try:
+                                                # 获取客户当前积分
+                                                customer = db.get_customer_by_id(order['customer_id'])
+                                                if customer:
+                                                    current_points = customer['points']
+                                                    
+                                                    # 使用新的积分更新方法，记录历史
+                                                    success = db.update_customer_points_with_history(
+                                                        customer_id=order['customer_id'],
+                                                        points_change=points_to_award,
+                                                        change_type='order_reward',
+                                                        order_id=order['id'],
+                                                        reason=f"订单#{order['id']}完成奖励",
+                                                        operator='系统'
+                                                    )
+                                                    
+                                                    if success:
+                                                        # 标记订单已加积分
+                                                        db.execute_query(
+                                                            "UPDATE orders SET points_awarded = 1 WHERE id = ?",
+                                                            (order['id'],)
+                                                        )
+                                                        
+                                                        st.success(f"✅ 成功给客户 {order['customer_name']} 加了 {points_to_award} 积分！")
+                                                        
+                                                        # 清理缓存
+                                                        if 'order_cache_key' in st.session_state:
+                                                            del st.session_state.order_cache_key
+                                                        if 'order_cache_data' in st.session_state:
+                                                            del st.session_state.order_cache_data
+                                                        
+                                                        st.rerun()
+                                                    else:
+                                                        st.error("❌ 加积分失败，请重试")
+                                                else:
+                                                    st.error("❌ 找不到客户信息")
+                                            except Exception as e:
+                                                st.error(f"❌ 操作失败: {str(e)}")
+                                        else:
+                                            st.warning("⚠️ 请输入大于0的积分数量")
+                            
+                            elif order_completed and points_awarded:
+                                st.info("ℹ️ 该订单已经给客户加过积分了")
+                            
+                            elif not order_completed:
+                                st.info("ℹ️ 订单完成后可给客户加积分")
                         
                         # 编辑订单表单（弹窗式）
                         if st.session_state.get(f"edit_order_{order['id']}", False):
@@ -1661,18 +1931,28 @@ elif selected == "📋 订单管理":
                     selected_custom_inventory = available_items[custom_item_index]
                 
                 with col2:
-                    # 选择表布
-                    outer_fabric_options = [f"{fabric['name']} ({fabric['material_type']})" for fabric in fabrics]
-                    selected_outer_fabric = st.selectbox("选择表布", outer_fabric_options, key="outer_fabric")
-                    outer_fabric_index = outer_fabric_options.index(selected_outer_fabric)
-                    selected_outer_fabric_data = fabrics[outer_fabric_index]
+                    # 选择表布 - 只显示用途类型为"表布"的面料
+                    outer_fabrics = [fabric for fabric in fabrics if fabric['usage_type'] == '表布']
+                    if outer_fabrics:
+                        outer_fabric_options = [f"{fabric['name']} ({fabric['material_type']})" for fabric in outer_fabrics]
+                        selected_outer_fabric = st.selectbox("选择表布", outer_fabric_options, key="outer_fabric")
+                        outer_fabric_index = outer_fabric_options.index(selected_outer_fabric)
+                        selected_outer_fabric_data = outer_fabrics[outer_fabric_index]
+                    else:
+                        st.warning("⚠️ 暂无表布面料")
+                        selected_outer_fabric_data = None
                 
                 with col3:
-                    # 选择里布
-                    inner_fabric_options = [f"{fabric['name']} ({fabric['material_type']})" for fabric in fabrics]
-                    selected_inner_fabric = st.selectbox("选择里布", inner_fabric_options, key="inner_fabric")
-                    inner_fabric_index = inner_fabric_options.index(selected_inner_fabric)
-                    selected_inner_fabric_data = fabrics[inner_fabric_index]
+                    # 选择里布 - 只显示用途类型为"里布"的面料
+                    inner_fabrics = [fabric for fabric in fabrics if fabric['usage_type'] == '里布']
+                    if inner_fabrics:
+                        inner_fabric_options = [f"{fabric['name']} ({fabric['material_type']})" for fabric in inner_fabrics]
+                        selected_inner_fabric = st.selectbox("选择里布", inner_fabric_options, key="inner_fabric")
+                        inner_fabric_index = inner_fabric_options.index(selected_inner_fabric)
+                        selected_inner_fabric_data = inner_fabrics[inner_fabric_index]
+                    else:
+                        st.warning("⚠️ 暂无里布面料")
+                        selected_inner_fabric_data = None
                 
                 with col4:
                     custom_quantity = st.number_input("数量", min_value=1, value=1, step=1, format="%d", key="custom_quantity")
@@ -1685,21 +1965,25 @@ elif selected == "📋 订单管理":
                 custom_notes = st.text_area("定制备注", placeholder="特殊要求、工艺说明等", key="custom_notes")
                 
                 if st.button("🎨 添加定制商品到订单"):
-                    custom_order_item = {
-                        'type': '定制',
-                        'inventory_id': selected_custom_inventory['id'],
-                        'outer_fabric_id': selected_outer_fabric_data['id'],
-                        'inner_fabric_id': selected_inner_fabric_data['id'],
-                        'name': f"定制-{selected_custom_inventory['product_name']}",
-                        'outer_fabric_name': selected_outer_fabric_data['name'],
-                        'inner_fabric_name': selected_inner_fabric_data['name'],
-                        'quantity': custom_quantity,
-                        'unit_price': custom_price,
-                        'total_price': custom_price * custom_quantity,
-                        'notes': custom_notes
-                    }
-                    st.session_state.order_items.append(custom_order_item)
-                    st.success("✅ 定制商品已添加到订单")
+                    # 验证面料选择
+                    if selected_outer_fabric_data is None or selected_inner_fabric_data is None:
+                        st.error("❌ 请确保选择了表布和里布")
+                    else:
+                        custom_order_item = {
+                            'type': '定制',
+                            'inventory_id': selected_custom_inventory['id'],
+                            'outer_fabric_id': selected_outer_fabric_data['id'],
+                            'inner_fabric_id': selected_inner_fabric_data['id'],
+                            'name': f"定制-{selected_custom_inventory['product_name']}",
+                            'outer_fabric_name': selected_outer_fabric_data['name'],
+                            'inner_fabric_name': selected_inner_fabric_data['name'],
+                            'quantity': custom_quantity,
+                            'unit_price': custom_price,
+                            'total_price': custom_price * custom_quantity,
+                            'notes': custom_notes
+                        }
+                        st.session_state.order_items.append(custom_order_item)
+                        st.success("✅ 定制商品已添加到订单")
             else:
                 if not available_items:
                     st.warning("⚠️ 暂无可用商品作为定制基础")
@@ -1764,14 +2048,13 @@ elif selected == "📋 订单管理":
                                     inner_fabric_id=item['inner_fabric_id']
                                 )
                         
-                        # 自动完成支付并更新客户积分
+                        # 自动完成支付
                         db.complete_order_payment(order_id)
                         
                         # 获取订单总金额用于显示
                         orders = db.get_orders()
                         created_order = next((o for o in orders if o['id'] == order_id), None)
                         total_amount = created_order['total_amount'] if created_order else 0
-                        points_earned = int(total_amount)
                         
                         st.session_state.order_items = []  # 清空订单商品
                         # 清理缓存
@@ -1779,14 +2062,101 @@ elif selected == "📋 订单管理":
                             del st.session_state.order_cache_key
                         if 'order_cache_data' in st.session_state:
                             del st.session_state.order_cache_data
+                        
+                        # 保存新创建的订单信息到session_state，用于积分奖励
+                        st.session_state.newly_created_order = {
+                            'id': order_id,
+                            'customer_id': customer_id,
+                            'total_amount': total_amount,
+                            'customer_name': next((c['nickname'] for c in customers if c['id'] == customer_id), '未知客户')
+                        }
+                        
                         st.success(f"✅ 订单创建成功！订单号: {order_id}")
-                        st.success(f"💰 订单金额: ¥{total_amount:.2f}，客户获得 {points_earned} 积分")
+                        st.success(f"💰 订单金额: ¥{total_amount:.2f}")
                         st.rerun()
                 
                 with col2:
                     if st.button("🗑️ 清空订单", use_container_width=True):
                         st.session_state.order_items = []
                         st.rerun()
+            
+            # 积分奖励区域 - 在订单创建成功后显示
+            if 'newly_created_order' in st.session_state:
+                order_info = st.session_state.newly_created_order
+                
+                # 检查订单是否已经加过积分
+                orders = db.get_orders()
+                current_order = next((o for o in orders if o['id'] == order_info['id']), None)
+                
+                if current_order and not current_order.get('points_awarded', False):
+                    st.markdown("---")
+                    st.markdown("### 🎁 积分奖励")
+                    
+                    # 计算建议积分（订单金额的1%）
+                    suggested_points = max(1, int(order_info['total_amount'] * 0.01))
+                    
+                    st.info(f"💡 为客户 **{order_info['customer_name']}** 奖励积分？")
+                    st.write(f"📊 订单金额: ¥{order_info['total_amount']:.2f}")
+                    st.write(f"⭐ 建议积分: {suggested_points} 分（订单金额的1%）")
+                    
+                    col1, col2, col3 = st.columns([2, 2, 2])
+                    
+                    with col1:
+                        # 积分数量输入
+                        points_to_award = st.number_input(
+                            "积分数量", 
+                            min_value=0, 
+                            value=suggested_points, 
+                            step=1,
+                            key=f"points_award_{order_info['id']}"
+                        )
+                    
+                    with col2:
+                        if st.button("🎁 奖励积分", use_container_width=True, key=f"award_points_{order_info['id']}"):
+                            if points_to_award > 0:
+                                try:
+                                    # 使用积分历史记录功能更新客户积分
+                                    success = db.update_customer_points_with_history(
+                                        order_info['customer_id'], 
+                                        points_to_award, 
+                                        f"订单奖励 - 订单号: {order_info['id']}"
+                                    )
+                                    
+                                    if success:
+                                        # 标记订单已加积分
+                                        db.update_order(order_info['id'], points_awarded=True)
+                                        
+                                        st.success(f"✅ 成功为客户 {order_info['customer_name']} 奖励 {points_to_award} 积分！")
+                                        
+                                        # 清理session_state
+                                        del st.session_state.newly_created_order
+                                        
+                                        # 清理缓存
+                                        if 'customer_cache_key' in st.session_state:
+                                            del st.session_state.customer_cache_key
+                                        if 'customer_cache_data' in st.session_state:
+                                            del st.session_state.customer_cache_data
+                                        
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ 积分奖励失败，请重试")
+                                except Exception as e:
+                                    st.error(f"❌ 积分奖励失败: {str(e)}")
+                            else:
+                                st.warning("⚠️ 积分数量必须大于0")
+                    
+                    with col3:
+                        if st.button("⏭️ 跳过奖励", use_container_width=True, key=f"skip_points_{order_info['id']}"):
+                            # 标记订单已处理积分（跳过）
+                            db.update_order(order_info['id'], points_awarded=True)
+                            
+                            # 清理session_state
+                            del st.session_state.newly_created_order
+                            st.info("已跳过积分奖励")
+                            st.rerun()
+                elif current_order and current_order.get('points_awarded', False):
+                    # 如果已经加过积分，清理session_state
+                    del st.session_state.newly_created_order
 
 # 系统设置页面
 elif selected == "⚙️ 系统设置":
