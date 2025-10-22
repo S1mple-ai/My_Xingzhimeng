@@ -771,15 +771,41 @@ class DatabaseManager:
         conn.close()
         return None
     
-    def update_order(self, order_id: int, customer_id: int, notes: str = "", 
-                    image_path: str = "", status: str = "pending") -> bool:
+    def update_order(self, order_id: int, customer_id: int = None, notes: str = None, 
+                    image_path: str = None, status: str = None, points_awarded: bool = None) -> bool:
         """更新订单信息"""
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE orders SET customer_id=?, notes=?, image_path=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (customer_id, notes, image_path, status, order_id)
-        )
+        
+        # 构建动态更新语句
+        update_fields = []
+        update_values = []
+        
+        if customer_id is not None:
+            update_fields.append("customer_id=?")
+            update_values.append(customer_id)
+        if notes is not None:
+            update_fields.append("notes=?")
+            update_values.append(notes)
+        if image_path is not None:
+            update_fields.append("image_path=?")
+            update_values.append(image_path)
+        if status is not None:
+            update_fields.append("status=?")
+            update_values.append(status)
+        if points_awarded is not None:
+            update_fields.append("points_awarded=?")
+            update_values.append(points_awarded)
+        
+        if not update_fields:
+            return False  # 没有字段需要更新
+        
+        # 添加updated_at字段
+        update_fields.append("updated_at=CURRENT_TIMESTAMP")
+        update_values.append(order_id)
+        
+        sql = f"UPDATE orders SET {', '.join(update_fields)} WHERE id=?"
+        cursor.execute(sql, update_values)
         success = cursor.rowcount > 0
         conn.commit()
         conn.close()
@@ -1115,7 +1141,7 @@ class DatabaseManager:
         for row in cursor.fetchall():
             fabrics.append({
                 'id': row[0], 'name': row[1], 'material_type': row[2],
-                'usage_type': row[3], 'created_at': row[4], 'updated_at': row[5]
+                'usage_type': row[3], 'created_at': row[4], 'updated_at': row[5], 'image_path': row[6]
             })
         conn.close()
         return fabrics
@@ -1130,7 +1156,7 @@ class DatabaseManager:
         if row:
             fabric = {
                 'id': row[0], 'name': row[1], 'material_type': row[2],
-                'usage_type': row[3], 'created_at': row[4], 'updated_at': row[5]
+                'usage_type': row[3], 'created_at': row[4], 'updated_at': row[5], 'image_path': row[6]
             }
             conn.close()
             return fabric

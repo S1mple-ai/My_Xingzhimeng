@@ -5,7 +5,7 @@ from database import DatabaseManager
 from streamlit_option_menu import option_menu
 import plotly.express as px
 import plotly.graph_objects as go
-from upload_components import drag_drop_image_uploader, drag_drop_media_uploader, display_uploaded_media, enhanced_image_preview
+from upload_components import drag_drop_image_uploader, drag_drop_media_uploader, display_uploaded_media, enhanced_image_preview, save_uploaded_file
 from ui_components import (
     show_loading_spinner, show_progress_bar, show_success_message, 
     show_error_message, show_warning_message, create_metric_card,
@@ -506,48 +506,11 @@ if st.session_state.get('show_inventory_details', False):
                 st.session_state.show_inventory_details = False
                 st.rerun()
 
-# 面料删除确认对话框
-if st.session_state.get('show_delete_fabric_confirm', False):
-    with st.expander("🗑️ 删除确认", expanded=True):
-        fabric_id = st.session_state.get('delete_fabric_id')
-        st.warning("确定要删除这个面料吗？此操作不可撤销！")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("确认删除", type="primary", key="confirm_delete_fabric"):
-                try:
-                    if db.delete_fabric(fabric_id):
-                        st.success("面料删除成功！")
-                        st.session_state.show_delete_fabric_confirm = False
-                        st.rerun()
-                    else:
-                        st.error("删除失败！")
-                except Exception as e:
-                    st.error(f"删除失败: {str(e)}")
-        with col2:
-            if st.button("取消", key="cancel_delete_fabric"):
-                st.session_state.show_delete_fabric_confirm = False
-                st.rerun()
+# 面料删除确认对话框已移至ui_components.py中的弹窗系统
 
 
 
-# 库存删除确认对话框
-if st.session_state.get('show_delete_inventory_confirm', False):
-    with st.expander("🗑️ 删除确认", expanded=True):
-        inventory_id = st.session_state.get('delete_inventory_id')
-        st.warning("确定要删除这个商品吗？此操作不可撤销！")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("确认删除", type="primary", key="confirm_delete_inventory"):
-                if db.delete_inventory_item(inventory_id):
-                    st.success("商品删除成功！")
-                    st.session_state.show_delete_inventory_confirm = False
-                    st.rerun()
-                else:
-                    st.error("删除失败！")
-        with col2:
-            if st.button("取消", key="cancel_delete_inventory"):
-                st.session_state.show_delete_inventory_confirm = False
-                st.rerun()
+# 库存删除确认对话框已移至ui_components.py中的弹窗系统
 
 # 侧边栏导航
 with st.sidebar:
@@ -1140,9 +1103,15 @@ elif selected == "🧵 面料管理":
                     st.rerun()
                 
                 def on_fabric_delete(fabric_data):
-                    st.session_state.delete_fabric_id = fabric_data['id']
-                    st.session_state.show_delete_fabric_confirm = True
-                    st.rerun()
+                    """删除面料的回调函数"""
+                    try:
+                        if db.delete_fabric(fabric_data['id']):
+                            st.success("面料删除成功！")
+                            st.rerun()
+                        else:
+                            st.error("删除失败！")
+                    except Exception as e:
+                        st.error(f"删除失败: {str(e)}")
                 
                 create_card_grid(fabric_list, card_type="fabric", columns=3, 
                                on_edit=on_fabric_edit, on_view=on_fabric_view, on_delete=on_fabric_delete)
@@ -1169,15 +1138,12 @@ elif selected == "🧵 面料管理":
             # 图片上传区域
             st.markdown("---")
             st.markdown("**🖼️ 面料图片**")
-            uploaded_file = drag_drop_image_uploader(
+            uploaded_file, _ = drag_drop_image_uploader(
                 key="fabric_image_upload",
                 label="拖拽图片到此处或点击上传",
-                help_text="支持 JPG, PNG, GIF 格式"
+                help_text="支持 JPG, PNG, GIF 格式",
+                form_safe=True
             )
-            
-            # 显示上传的图片预览
-            if uploaded_file:
-                safe_image_display(uploaded_file, width=200, caption="面料图片预览")
             
             submitted = st.form_submit_button("➕ 添加面料", use_container_width=True)
             
@@ -1311,9 +1277,15 @@ elif selected == "📦 库存管理":
                     st.rerun()
                 
                 def on_inventory_delete(inventory_data):
-                    st.session_state.delete_inventory_id = inventory_data['id']
-                    st.session_state.show_delete_inventory_confirm = True
-                    st.rerun()
+                    """删除库存商品的回调函数"""
+                    try:
+                        if db.delete_inventory_item(inventory_data['id']):
+                            st.success("商品删除成功！")
+                            st.rerun()
+                        else:
+                            st.error("删除失败！")
+                    except Exception as e:
+                        st.error(f"删除失败: {str(e)}")
                 
                 create_card_grid(filtered_items, card_type="inventory", columns=3,
                                on_edit=on_inventory_edit, on_view=on_inventory_view, on_delete=on_inventory_delete)
@@ -2119,7 +2091,9 @@ elif selected == "📋 订单管理":
                                     success = db.update_customer_points_with_history(
                                         order_info['customer_id'], 
                                         points_to_award, 
-                                        f"订单奖励 - 订单号: {order_info['id']}"
+                                        'order',  # change_type
+                                        order_info['id'],  # order_id
+                                        f"订单奖励 - 订单号: {order_info['id']}"  # reason
                                     )
                                     
                                     if success:

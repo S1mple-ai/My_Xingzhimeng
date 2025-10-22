@@ -67,7 +67,7 @@ def save_uploaded_file(uploaded_file, file_type="image", category="general"):
     
     return str(save_path)
 
-def drag_drop_image_uploader(key, label="上传图片", help_text="支持拖拽上传图片文件", category="general"):
+def drag_drop_image_uploader(key, label="上传图片", help_text="支持拖拽上传图片文件", category="general", form_safe=False):
     """
     拖拽式图片上传组件
     
@@ -76,6 +76,7 @@ def drag_drop_image_uploader(key, label="上传图片", help_text="支持拖拽�
         label: 显示标签
         help_text: 帮助文本
         category: 文件分类（如 "fabric", "inventory", "order" 等）
+        form_safe: 是否在表单内使用（表单内不能使用按钮）
     
     Returns:
         tuple: (uploaded_file, file_path)
@@ -153,7 +154,7 @@ def drag_drop_image_uploader(key, label="上传图片", help_text="支持拖拽�
             st.markdown("#### 📷 图片预览")
             
             # 使用增强的图片预览
-            enhanced_image_preview(image, uploaded_file.name, f"upload_{key}")
+            enhanced_image_preview(image, uploaded_file.name, f"upload_{key}", form_safe=form_safe)
             
             # 保存文件
             file_path = save_uploaded_file(uploaded_file, "image", category)
@@ -249,7 +250,7 @@ def drag_drop_media_uploader(key, label="上传媒体文件", help_text="支持�
     
     return result
 
-def enhanced_image_preview(image, image_name, key_suffix=""):
+def enhanced_image_preview(image, image_name, key_suffix="", form_safe=False):
     """
     增强的图片预览组件，支持缩放、全屏、旋转等功能
     
@@ -257,6 +258,7 @@ def enhanced_image_preview(image, image_name, key_suffix=""):
         image: PIL Image对象
         image_name: 图片名称
         key_suffix: 组件key后缀
+        form_safe: 是否在表单内使用（表单内不能使用按钮）
     """
     unique_key = f"img_preview_{key_suffix}_{uuid.uuid4().hex[:8]}"
     
@@ -273,7 +275,13 @@ def enhanced_image_preview(image, image_name, key_suffix=""):
     with col3:
         st.markdown(f"**大小:** {file_size:.1f}KB")
     
-    # 控制按钮
+    if form_safe:
+        # 表单安全模式：只显示图片，不包含按钮
+        display_width = min(400, width)
+        st.image(image, caption=f"{image_name}", width=display_width)
+        return
+    
+    # 控制按钮（仅在非表单模式下显示）
     col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:

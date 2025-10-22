@@ -494,17 +494,18 @@ def create_ecommerce_card(item_data: dict, card_type: str = "fabric", key_prefix
         # 添加卡片容器的开始
         st.markdown(f'<div class="ecommerce-card">', unsafe_allow_html=True)
         
-        # 图片部分 - 修复图片显示问题
+        # 图片部分 - 使用base64编码嵌入图片
         if image_path and os.path.exists(image_path):
-            # 图片容器和图片一起显示
-            st.markdown(f'''
-            <div class="card-image-container" style="position: relative;">
-                {badge_html}
-            </div>
-            ''', unsafe_allow_html=True)
-            # 使用Streamlit原生图片组件，确保在容器内显示
             try:
-                st.image(image_path, use_column_width=True)
+                # 获取图片的base64编码
+                image_base64 = get_image_base64(image_path)
+                # 显示带图片的容器
+                st.markdown(f'''
+                <div class="card-image-container" style="position: relative;">
+                    <img src="data:image/jpeg;base64,{image_base64}" alt="面料图片" style="width: 100%; height: 100%; object-fit: cover;">
+                    {badge_html}
+                </div>
+                ''', unsafe_allow_html=True)
             except Exception as e:
                 # 如果图片加载失败，显示占位符
                 st.markdown(f'''
