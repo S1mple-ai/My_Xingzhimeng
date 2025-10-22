@@ -17,6 +17,10 @@ from auto_backup import check_and_perform_backup
 from config import config
 from services import DashboardService, ExportService
 from utils import CacheManager
+from performance_monitor import PerformanceMonitor, monitor_execution_time
+from ui_components_extended import create_advanced_data_table, create_search_filter_panel, create_dashboard_stats
+from database_optimizer import initialize_database_optimization, OptimizedQueries, monitor_query_performance
+from cache_manager import cache_manager, smart_cache, CacheMetrics
 
 # 导入代加工管理模块
 from processing_management import show_processing_management
@@ -38,7 +42,25 @@ def init_services():
     cache_manager = CacheManager()
     return db, dashboard_service, export_service, cache_manager
 
+@st.cache_resource
+def init_optimizations():
+    """初始化第二层优化组件"""
+    # 获取数据库路径
+    db_path = config.database.db_path
+    
+    # 初始化数据库优化
+    initialize_database_optimization(db_path)
+    
+    # 初始化优化查询
+    optimized_queries = OptimizedQueries(db_path)
+    
+    # 初始化缓存指标
+    cache_metrics = CacheMetrics()
+    
+    return optimized_queries, cache_metrics
+
 db, dashboard_service, export_service, cache_manager = init_services()
+optimized_queries, cache_metrics = init_optimizations()
 
 # 安全的图片显示函数
 def safe_image_display(uploaded_file, width=200, caption="图片预览"):
@@ -122,298 +144,18 @@ if 'backup_checked' not in st.session_state:
         check_and_perform_backup(db)
 
 # 自定义CSS样式
-st.markdown("""
-<style>
-    /* 主题色彩变量 */
-    :root {
-        --primary-color: #2E86AB;
-        --secondary-color: #A23B72;
-        --accent-color: #F18F01;
-        --success-color: #06D6A0;
-        --warning-color: #FFD23F;
-        --error-color: #F72585;
-        --background-light: #F8F9FA;
-        --text-dark: #2D3748;
-        --border-light: #E2E8F0;
-    }
-    
-    /* 主标题样式 */
-    .main-header {
-        font-size: 2.8rem;
-        font-weight: 700;
-        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-align: center;
-        margin-bottom: 2rem;
-        padding: 1.5rem;
-        background-color: white;
-        border-radius: 15px;
-        box-shadow: 0 4px 20px rgba(46, 134, 171, 0.1);
-        border: 1px solid var(--border-light);
-    }
-    
-    /* 卡片样式 */
-    .metric-card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 12px;
-        border: 1px solid var(--border-light);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-        margin: 0.75rem 0;
-        transition: all 0.3s ease;
-    }
-    
-    .metric-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-    }
-    
-    /* 消息样式 */
-    .success-message {
-        background: linear-gradient(135deg, #06D6A0, #00B894);
-        color: white;
-        padding: 1rem;
-        border-radius: 10px;
-        margin: 1rem 0;
-        box-shadow: 0 4px 12px rgba(6, 214, 160, 0.3);
-        border: none;
-    }
-    
-    .error-message {
-        background: linear-gradient(135deg, #F72585, #E84393);
-        color: white;
-        padding: 1rem;
-        border-radius: 10px;
-        margin: 1rem 0;
-        box-shadow: 0 4px 12px rgba(247, 37, 133, 0.3);
-        border: none;
-    }
-    
-    .warning-message {
-        background: linear-gradient(135deg, #FFD23F, #FDCB6E);
-        color: var(--text-dark);
-        padding: 1rem;
-        border-radius: 10px;
-        margin: 1rem 0;
-        box-shadow: 0 4px 12px rgba(255, 210, 63, 0.3);
-        border: none;
-    }
-    
-    /* 按钮样式 */
-    .stButton > button {
-        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-        color: white;
-        border-radius: 8px;
-        border: none;
-        padding: 0.6rem 1.2rem;
-        font-weight: 600;
-        transition: all 0.3s ease;
-        box-shadow: 0 2px 8px rgba(46, 134, 171, 0.3);
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 15px rgba(46, 134, 171, 0.4);
-        background: linear-gradient(135deg, var(--secondary-color), var(--primary-color));
-    }
-    
-    /* 输入框样式 */
-    .stTextInput > div > div > input {
-        border-radius: 8px;
-        border: 2px solid var(--border-light);
-        transition: all 0.3s ease;
-    }
-    
-    .stTextInput > div > div > input:focus {
-        border-color: var(--primary-color);
-        box-shadow: 0 0 0 3px rgba(46, 134, 171, 0.1);
-    }
-    
-    /* 选择框样式 */
-    .stSelectbox > div > div > select {
-        border-radius: 8px;
-        border: 2px solid var(--border-light);
-    }
-    
-    /* 数据表格样式 */
-    .dataframe {
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-    }
-    
-    /* 侧边栏样式 */
-    .css-1d391kg {
-        background: linear-gradient(180deg, #F8F9FA 0%, #E8F4F8 100%);
-        border-right: 1px solid #E2E8F0;
-    }
-    
-    /* 侧边栏容器优化 */
-    .css-1lcbmhc {
-        background: transparent;
-    }
-    
-    /* 菜单项动画优化 */
-    .nav-link {
-        position: relative;
-        overflow: hidden;
-    }
-    
-    .nav-link::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: -100%;
-        width: 100%;
-        height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(46, 134, 171, 0.1), transparent);
-        transition: left 0.5s ease;
-    }
-    
-    .nav-link:hover::before {
-        left: 100%;
-    }
-    
-    /* 菜单图标动画 */
-    .nav-link .icon {
-        transition: transform 0.3s ease;
-    }
-    
-    .nav-link:hover .icon {
-        transform: scale(1.1) rotate(5deg);
-    }
-    
-    /* 选中状态的图标 */
-    .nav-link-selected .icon {
-        color: white !important;
-        transform: scale(1.05);
-    }
-    
-    /* 优化emoji图标显示 */
-    .nav-link {
-        line-height: 1.4 !important;
-    }
-    
-    .nav-link span {
-        display: flex !important;
-        align-items: center !important;
-        gap: 8px !important;
-    }
-    
-    /* emoji图标优化 */
-    .nav-link span::before {
-        font-size: 1.1em !important;
-        line-height: 1 !important;
-        display: inline-block !important;
-        width: 20px !important;
-        text-align: center !important;
-    }
-    
-    /* 菜单项文字和图标的统一处理 */
-    .nav-link-content {
-        display: flex !important;
-        align-items: center !important;
-        justify-content: flex-start !important;
-        width: 100% !important;
-    }
-    
-    /* 增强菜单项的视觉层次 */
-    .nav-link {
-        position: relative !important;
-        overflow: hidden !important;
-    }
-    
-    .nav-link::after {
-        content: '' !important;
-        position: absolute !important;
-        top: 0 !important;
-        right: -100% !important;
-        width: 100% !important;
-        height: 100% !important;
-        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent) !important;
-        transition: right 0.6s ease !important;
-    }
-    
-    .nav-link:hover::after {
-        right: 100% !important;
-    }
-    
-    /* 选中状态的增强效果 */
-    .nav-link-selected::before {
-        content: '' !important;
-        position: absolute !important;
-        left: 0 !important;
-        top: 50% !important;
-        transform: translateY(-50%) !important;
-        width: 4px !important;
-        height: 60% !important;
-        background: rgba(255,255,255,0.8) !important;
-        border-radius: 0 2px 2px 0 !important;
-    }
-    
-    /* 加载动画 */
-    .loading-spinner {
-        display: inline-block;
-        width: 20px;
-        height: 20px;
-        border: 3px solid rgba(46, 134, 171, 0.3);
-        border-radius: 50%;
-        border-top-color: var(--primary-color);
-        animation: spin 1s ease-in-out infinite;
-    }
-    
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
-    
-    /* 进度条样式 */
-    .progress-bar {
-        width: 100%;
-        height: 8px;
-        background-color: var(--border-light);
-        border-radius: 4px;
-        overflow: hidden;
-        margin: 1rem 0;
-    }
-    
-    .progress-fill {
-        height: 100%;
-        background: linear-gradient(90deg, var(--primary-color), var(--accent-color));
-        border-radius: 4px;
-        transition: width 0.3s ease;
-    }
-    
-    /* 工具提示样式 */
-    .tooltip {
-        position: relative;
-        display: inline-block;
-        cursor: help;
-    }
-    
-    .tooltip .tooltiptext {
-        visibility: hidden;
-        width: 200px;
-        background-color: var(--text-dark);
-        color: white;
-        text-align: center;
-        border-radius: 6px;
-        padding: 8px;
-        position: absolute;
-        z-index: 1;
-        bottom: 125%;
-        left: 50%;
-        margin-left: -100px;
-        opacity: 0;
-        transition: opacity 0.3s;
-    }
-    
-    .tooltip:hover .tooltiptext {
-        visibility: visible;
-        opacity: 1;
-    }
-</style>
-""", unsafe_allow_html=True)
+# 加载外部CSS样式文件
+def load_css():
+    """加载外部CSS样式文件"""
+    try:
+        with open('static/css/main.css', 'r', encoding='utf-8') as f:
+            css_content = f.read()
+        st.markdown(f'<style>{css_content}</style>', unsafe_allow_html=True)
+    except FileNotFoundError:
+        st.warning("CSS样式文件未找到，使用默认样式")
+
+# 加载CSS样式
+load_css()
 
 # 主标题
 st.markdown('<div class="main-header">🏪 星之梦手作管理系统</div>', unsafe_allow_html=True)
@@ -1145,18 +887,36 @@ elif selected == "👥 客户管理":
                             except Exception as e:
                                 show_error_message(f"更新客户信息失败: {str(e)}")
                         
-                        # 使用确认对话框进行删除操作
-                        if create_action_button("🗑️ 删除", f"delete_{customer['id']}", "danger"):
-                            if create_confirmation_dialog(
-                                f"确认删除客户 '{customer['nickname']}' 吗？",
-                                f"delete_confirm_{customer['id']}"
-                            ):
-                                try:
-                                    db.delete_customer(customer['id'])
-                                    show_success_message("客户已删除")
+                        # 删除客户功能
+                        delete_key = f"delete_customer_{customer['id']}"
+                        confirm_key = f"confirm_delete_{customer['id']}"
+                        
+                        # 如果还没有点击删除按钮，显示删除按钮
+                        if not st.session_state.get(delete_key, False):
+                            if st.button("🗑️ 删除", key=f"btn_delete_{customer['id']}", type="secondary"):
+                                st.session_state[delete_key] = True
+                                st.rerun()
+                        else:
+                            # 显示确认对话框
+                            st.warning(f"⚠️ 确认删除客户 '{customer['nickname']}' 吗？此操作不可撤销！")
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.button("✅ 确认删除", key=f"confirm_{customer['id']}", type="primary"):
+                                    try:
+                                        db.delete_customer(customer['id'])
+                                        show_success_message("客户已删除")
+                                        # 清理状态
+                                        st.session_state[delete_key] = False
+                                        if confirm_key in st.session_state:
+                                            del st.session_state[confirm_key]
+                                        st.rerun()
+                                    except Exception as e:
+                                        show_error_message(f"删除客户失败: {str(e)}")
+                                        st.session_state[delete_key] = False
+                            with col2:
+                                if st.button("❌ 取消", key=f"cancel_{customer['id']}"):
+                                    st.session_state[delete_key] = False
                                     st.rerun()
-                                except Exception as e:
-                                    show_error_message(f"删除客户失败: {str(e)}")
         else:
             st.info("📝 暂无客户数据，请添加客户")
     

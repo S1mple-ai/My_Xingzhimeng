@@ -176,6 +176,17 @@ def create_confirmation_dialog(message: str, key: str) -> bool:
     Returns:
         bool: 用户是否确认
     """
+    # 检查是否已经显示确认对话框
+    dialog_key = f"show_dialog_{key}"
+    confirm_key = f"confirmed_{key}"
+    
+    # 如果还没有显示对话框，则显示
+    if not st.session_state.get(dialog_key, False):
+        st.session_state[dialog_key] = True
+        st.session_state[confirm_key] = False
+        st.rerun()
+    
+    # 显示确认对话框
     st.markdown(f"""
     <div class="warning-message">
         <strong>⚠️ 确认操作</strong><br>
@@ -185,11 +196,18 @@ def create_confirmation_dialog(message: str, key: str) -> bool:
     
     col1, col2 = st.columns(2)
     with col1:
-        confirm = create_action_button("确认", f"confirm_{key}", "✅", "success")
+        if st.button("✅ 确认", key=f"confirm_{key}", type="primary"):
+            st.session_state[confirm_key] = True
+            st.session_state[dialog_key] = False
+            st.rerun()
     with col2:
-        cancel = create_action_button("取消", f"cancel_{key}", "❌", "error")
+        if st.button("❌ 取消", key=f"cancel_{key}"):
+            st.session_state[confirm_key] = False
+            st.session_state[dialog_key] = False
+            st.rerun()
     
-    return confirm
+    # 返回确认状态
+    return st.session_state.get(confirm_key, False)
 
 def simulate_loading(duration: float = 2.0, steps: int = 10):
     """模拟加载过程
