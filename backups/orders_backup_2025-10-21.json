@@ -1,0 +1,190 @@
+{
+  "backup_date": "2025-10-21",
+  "backup_time": "2025-10-21 14:12:02",
+  "data_type": "orders",
+  "count": 4,
+  "data": [
+    {
+      "id": 8,
+      "customer_id": 39,
+      "total_amount": 76,
+      "status": "completed",
+      "notes": "",
+      "image_path": "2025-10-19 09:59:44",
+      "created_at": "2025-10-19 09:59:44",
+      "updated_at": "",
+      "customer_name": "测试专用",
+      "customer_phone_suffix": "8888",
+      "items": [
+        {
+          "id": 13,
+          "order_id": 8,
+          "item_type": "定制",
+          "inventory_id": 2,
+          "outer_fabric_id": 4,
+          "inner_fabric_id": 4,
+          "quantity": 1,
+          "unit_price": 38,
+          "notes": "多字段测试多字段测试多字段测试多字段测试\n多字段测试\n多字段测试\n多字段测试",
+          "inventory_name": "中豆腐",
+          "outer_fabric_name": "快乐小羊",
+          "inner_fabric_name": "快乐小羊"
+        },
+        {
+          "id": 14,
+          "order_id": 8,
+          "item_type": "现货",
+          "inventory_id": 2,
+          "outer_fabric_id": null,
+          "inner_fabric_id": null,
+          "quantity": 1,
+          "unit_price": 38,
+          "notes": "",
+          "inventory_name": "中豆腐",
+          "outer_fabric_name": null,
+          "inner_fabric_name": null
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "customer_id": 39,
+      "total_amount": 114,
+      "status": "completed",
+      "notes": "订单备注测试订单备注测试订单备注测试\n订单备注测试订单备注测试\n订单备注测试",
+      "image_path": "2025-10-19 09:57:44",
+      "created_at": "2025-10-19 09:57:44",
+      "updated_at": "",
+      "customer_name": "测试专用",
+      "customer_phone_suffix": "8888",
+      "items": [
+        {
+          "id": 10,
+          "order_id": 7,
+          "item_type": "定制",
+          "inventory_id": 2,
+          "outer_fabric_id": 4,
+          "inner_fabric_id": 4,
+          "quantity": 1,
+          "unit_price": 38,
+          "notes": "",
+          "inventory_name": "中豆腐",
+          "outer_fabric_name": "快乐小羊",
+          "inner_fabric_name": "快乐小羊"
+        },
+        {
+          "id": 11,
+          "order_id": 7,
+          "item_type": "定制",
+          "inventory_id": 2,
+          "outer_fabric_id": 4,
+          "inner_fabric_id": 4,
+          "quantity": 1,
+          "unit_price": 38,
+          "notes": "商品测试",
+          "inventory_name": "中豆腐",
+          "outer_fabric_name": "快乐小羊",
+          "inner_fabric_name": "快乐小羊"
+        },
+        {
+          "id": 12,
+          "order_id": 7,
+          "item_type": "定制",
+          "inventory_id": 2,
+          "outer_fabric_id": 4,
+          "inner_fabric_id": 4,
+          "quantity": 1,
+          "unit_price": 38,
+          "notes": "多字段测试多字段测试多字段测试多字段测试\n多字段测试\n多字段测试\n多字段测试",
+          "inventory_name": "中豆腐",
+          "outer_fabric_name": "快乐小羊",
+          "inner_fabric_name": "快乐小羊"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "customer_id": 38,
+      "total_amount": 76,
+      "status": "completed",
+      "notes": "",
+      "image_path": "2025-10-19 09:32:18",
+      "created_at": "2025-10-19 09:32:18",
+      "updated_at": "uploads\\images\\小狗四方连续图.png",
+      "customer_name": "哪吒",
+      "customer_phone_suffix": "",
+      "items": [
+        {
+          "id": 8,
+          "order_id": 6,
+          "item_type": "现货",
+          "inventory_id": 2,
+          "outer_fabric_id": null,
+          "inner_fabric_id": null,
+          "quantity": 1,
+          "unit_price": 38,
+          "notes": "",
+          "inventory_name": "中豆腐",
+          "outer_fabric_name": null,
+          "inner_fabric_name": null
+        },
+        {
+          "id": 9,
+          "order_id": 6,
+          "item_type": "定制",
+          "inventory_id": 2,
+          "outer_fabric_id": 4,
+          "inner_fabric_id": 4,
+          "quantity": 1,
+          "unit_price": 38,
+          "notes": "",
+          "inventory_name": "中豆腐",
+          "outer_fabric_name": "快乐小羊",
+          "inner_fabric_name": "快乐小羊"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "customer_id": 1,
+      "total_amount": 86,
+      "status": "completed",
+      "notes": "订单备注",
+      "image_path": "2025-10-14 12:59:37",
+      "created_at": "2025-10-14 12:59:37",
+      "updated_at": "uploads\\images\\小熊小兔.png",
+      "customer_name": "薯条",
+      "customer_phone_suffix": "5822",
+      "items": [
+        {
+          "id": 6,
+          "order_id": 4,
+          "item_type": "现货",
+          "inventory_id": 2,
+          "outer_fabric_id": null,
+          "inner_fabric_id": null,
+          "quantity": 1,
+          "unit_price": 38,
+          "notes": "",
+          "inventory_name": "中豆腐",
+          "outer_fabric_name": null,
+          "inner_fabric_name": null
+        },
+        {
+          "id": 7,
+          "order_id": 4,
+          "item_type": "定制",
+          "inventory_id": null,
+          "outer_fabric_id": 1,
+          "inner_fabric_id": 3,
+          "quantity": 1,
+          "unit_price": 48,
+          "notes": "大号测试",
+          "inventory_name": null,
+          "outer_fabric_name": "红KT",
+          "inner_fabric_name": "粉波点"
+        }
+      ]
+    }
+  ]
+}

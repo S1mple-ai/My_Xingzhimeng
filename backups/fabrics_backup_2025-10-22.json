@@ -1,0 +1,40 @@
+{
+  "backup_date": "2025-10-22",
+  "backup_time": "2025-10-22 08:43:18",
+  "data_type": "fabrics",
+  "count": 4,
+  "data": [
+    {
+      "id": 5,
+      "name": "测试",
+      "material_type": "细帆",
+      "usage_type": "里布",
+      "created_at": "2025-10-20 14:11:43",
+      "updated_at": "2025-10-20 14:11:43"
+    },
+    {
+      "id": 4,
+      "name": "快乐小羊",
+      "material_type": "细帆绗棉",
+      "usage_type": "表布",
+      "created_at": "2025-10-16 17:10:36",
+      "updated_at": "2025-10-16 17:10:36"
+    },
+    {
+      "id": 3,
+      "name": "粉波点",
+      "material_type": "细帆",
+      "usage_type": "里布",
+      "created_at": "2025-10-14 10:58:25",
+      "updated_at": "2025-10-14 10:58:25"
+    },
+    {
+      "id": 1,
+      "name": "红KT",
+      "material_type": "细帆",
+      "usage_type": "表布",
+      "created_at": "2025-10-13 10:26:23",
+      "updated_at": "2025-10-13 10:26:23"
+    }
+  ]
+}

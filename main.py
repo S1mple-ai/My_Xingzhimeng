@@ -18,6 +18,9 @@ from config import config
 from services import DashboardService, ExportService
 from utils import CacheManager
 
+# 导入代加工管理模块
+from processing_management import show_processing_management
+
 # 页面配置
 st.set_page_config(**config.get_page_config())
 
@@ -242,7 +245,111 @@ st.markdown("""
     
     /* 侧边栏样式 */
     .css-1d391kg {
-        background-color: var(--background-light);
+        background: linear-gradient(180deg, #F8F9FA 0%, #E8F4F8 100%);
+        border-right: 1px solid #E2E8F0;
+    }
+    
+    /* 侧边栏容器优化 */
+    .css-1lcbmhc {
+        background: transparent;
+    }
+    
+    /* 菜单项动画优化 */
+    .nav-link {
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .nav-link::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(46, 134, 171, 0.1), transparent);
+        transition: left 0.5s ease;
+    }
+    
+    .nav-link:hover::before {
+        left: 100%;
+    }
+    
+    /* 菜单图标动画 */
+    .nav-link .icon {
+        transition: transform 0.3s ease;
+    }
+    
+    .nav-link:hover .icon {
+        transform: scale(1.1) rotate(5deg);
+    }
+    
+    /* 选中状态的图标 */
+    .nav-link-selected .icon {
+        color: white !important;
+        transform: scale(1.05);
+    }
+    
+    /* 优化emoji图标显示 */
+    .nav-link {
+        line-height: 1.4 !important;
+    }
+    
+    .nav-link span {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+    }
+    
+    /* emoji图标优化 */
+    .nav-link span::before {
+        font-size: 1.1em !important;
+        line-height: 1 !important;
+        display: inline-block !important;
+        width: 20px !important;
+        text-align: center !important;
+    }
+    
+    /* 菜单项文字和图标的统一处理 */
+    .nav-link-content {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        width: 100% !important;
+    }
+    
+    /* 增强菜单项的视觉层次 */
+    .nav-link {
+        position: relative !important;
+        overflow: hidden !important;
+    }
+    
+    .nav-link::after {
+        content: '' !important;
+        position: absolute !important;
+        top: 0 !important;
+        right: -100% !important;
+        width: 100% !important;
+        height: 100% !important;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent) !important;
+        transition: right 0.6s ease !important;
+    }
+    
+    .nav-link:hover::after {
+        right: 100% !important;
+    }
+    
+    /* 选中状态的增强效果 */
+    .nav-link-selected::before {
+        content: '' !important;
+        position: absolute !important;
+        left: 0 !important;
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+        width: 4px !important;
+        height: 60% !important;
+        background: rgba(255,255,255,0.8) !important;
+        border-radius: 0 2px 2px 0 !important;
     }
     
     /* 加载动画 */
@@ -514,18 +621,79 @@ if st.session_state.get('show_inventory_details', False):
 
 # 侧边栏导航
 with st.sidebar:
-    st.markdown("### 📋 系统导航")
+    # 优化的菜单栏标题
+    st.markdown("""
+    <div style="
+        background: linear-gradient(135deg, #2E86AB, #A23B72);
+        padding: 1rem 1.5rem;
+        border-radius: 12px;
+        margin-bottom: 1rem;
+        box-shadow: 0 4px 15px rgba(46, 134, 171, 0.2);
+    ">
+        <h3 style="
+            color: white;
+            margin: 0;
+            font-weight: 600;
+            font-size: 1.2rem;
+            text-align: center;
+        ">📋 系统导航</h3>
+        <p style="
+            color: rgba(255, 255, 255, 0.8);
+            margin: 0.5rem 0 0 0;
+            font-size: 0.85rem;
+            text-align: center;
+        ">选择功能模块进行操作</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
     selected = option_menu(
         menu_title=None,
-        options=["📊 仪表板", "👥 客户管理", "🧵 面料管理", "📦 库存管理", "📋 订单管理", "⚙️ 系统设置"],
-        icons=["graph-up", "people", "palette", "box", "clipboard-check", "gear"],
-        menu_icon="cast",
+        options=["📊 仪表板", "👥 客户管理", "🧵 面料管理", "📦 库存管理", "📋 订单管理", "🏭 加工管理", "⚙️ 系统设置"],
+        icons=None,  # 移除重复图标，统一使用emoji
+        menu_icon=None,
         default_index=0,
         styles={
-            "container": {"padding": "0!important", "background-color": "#fafafa"},
-            "icon": {"color": "#1f77b4", "font-size": "18px"},
-            "nav-link": {"font-size": "16px", "text-align": "left", "margin": "0px", "--hover-color": "#eee"},
-            "nav-link-selected": {"background-color": "#1f77b4"},
+            "container": {
+                "padding": "0.5rem 0",
+                "background-color": "transparent",
+                "border-radius": "10px"
+            },
+            "nav-link": {
+                "font-size": "16px",
+                "text-align": "left",
+                "margin": "3px 0",
+                "padding": "14px 18px",
+                "border-radius": "10px",
+                "background-color": "white",
+                "border": "1px solid #E2E8F0",
+                "box-shadow": "0 2px 6px rgba(0,0,0,0.08)",
+                "transition": "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                "display": "flex",
+                "align-items": "center",
+                "font-weight": "500",
+                "letter-spacing": "0.3px",
+                "--hover-color": "transparent"
+            },
+            "nav-link:hover": {
+                "background-color": "#F8FAFC",
+                "border-color": "#2E86AB",
+                "transform": "translateX(6px) scale(1.02)",
+                "box-shadow": "0 6px 20px rgba(46, 134, 171, 0.2)",
+                "color": "#2E86AB"
+            },
+            "nav-link-selected": {
+                "background": "linear-gradient(135deg, #2E86AB, #A23B72)",
+                "color": "white",
+                "border": "1px solid #2E86AB",
+                "box-shadow": "0 6px 20px rgba(46, 134, 171, 0.4)",
+                "transform": "translateX(6px) scale(1.02)",
+                "font-weight": "600"
+            },
+            "nav-link-selected:hover": {
+                "background": "linear-gradient(135deg, #A23B72, #2E86AB)",
+                "transform": "translateX(8px) scale(1.03)",
+                "box-shadow": "0 8px 25px rgba(46, 134, 171, 0.5)"
+            }
         }
     )
 
@@ -2131,6 +2299,10 @@ elif selected == "📋 订单管理":
                 elif current_order and current_order.get('points_awarded', False):
                     # 如果已经加过积分，清理session_state
                     del st.session_state.newly_created_order
+
+# 代加工管理页面
+elif selected == "🏭 加工管理":
+    show_processing_management()
 
 # 系统设置页面
 elif selected == "⚙️ 系统设置":

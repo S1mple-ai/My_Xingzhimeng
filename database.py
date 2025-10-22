@@ -268,8 +268,312 @@ class DatabaseManager:
             # 如果操作失败，说明表结构已经正确
             pass
         
+        # 代加工人员表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS processors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nickname TEXT NOT NULL,
+                phone TEXT,
+                wechat TEXT,
+                xiaohongshu TEXT,
+                douyin TEXT,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # 代加工订单表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS processing_orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                processor_id INTEGER NOT NULL,
+                fabric_id INTEGER,
+                fabric_meters_main DECIMAL(10,2) DEFAULT 0,
+                fabric_meters_lining DECIMAL(10,2) DEFAULT 0,
+                product_name TEXT NOT NULL,
+                product_quantity INTEGER DEFAULT 1,
+                processing_days INTEGER DEFAULT 0,
+                processing_cost DECIMAL(10,2) DEFAULT 0,
+                selling_price DECIMAL(10,2) DEFAULT 0,
+                status TEXT DEFAULT '待发货' CHECK(status IN ('待发货', '进行中', '已完成', '已取消')),
+                start_date DATE,
+                expected_finish_date DATE,
+                actual_finish_date DATE,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (processor_id) REFERENCES processors (id),
+                FOREIGN KEY (fabric_id) REFERENCES fabrics (id)
+            )
+        ''')
+        
         conn.commit()
         conn.close()
+    
+    # ==================== 代加工管理相关方法 ====================
+    
+    def add_processor(self, nickname: str, phone: str = None, wechat: str = None, 
+                     xiaohongshu: str = None, douyin: str = None, notes: str = None):
+        """添加代加工人员"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO processors (nickname, phone, wechat, xiaohongshu, douyin, notes)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (nickname, phone, wechat, xiaohongshu, douyin, notes))
+            processor_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+            self.clear_cache("processors")
+            logger.info(f"添加代加工人员成功: {nickname}")
+            return processor_id
+        except Exception as e:
+            logger.error(f"添加代加工人员失败: {e}")
+            raise e
+    
+    def get_processors(self) -> List[Dict]:
+        """获取所有代加工人员"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM processors ORDER BY created_at DESC")
+        processors = []
+        for row in cursor.fetchall():
+            processors.append({
+                'id': row[0], 'nickname': row[1], 'phone': row[2], 'wechat': row[3],
+                'xiaohongshu': row[4], 'douyin': row[5], 'notes': row[6],
+                'created_at': row[7], 'updated_at': row[8]
+            })
+        conn.close()
+        return processors
+    
+    def get_processor_by_id(self, processor_id: int):
+        """根据ID获取代加工人员"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM processors WHERE id=?", (processor_id,))
+        row = cursor.fetchone()
+        
+        if row:
+            processor = {
+                'id': row[0], 'nickname': row[1], 'phone': row[2], 'wechat': row[3],
+                'xiaohongshu': row[4], 'douyin': row[5], 'notes': row[6],
+                'created_at': row[7], 'updated_at': row[8]
+            }
+            conn.close()
+            return processor
+        
+        conn.close()
+        return None
+    
+    def update_processor(self, processor_id: int, nickname: str, phone: str = None, 
+                        wechat: str = None, xiaohongshu: str = None, douyin: str = None, notes: str = None):
+        """更新代加工人员信息"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE processors 
+                SET nickname=?, phone=?, wechat=?, xiaohongshu=?, douyin=?, notes=?, updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+            """, (nickname, phone, wechat, xiaohongshu, douyin, notes, processor_id))
+            conn.commit()
+            conn.close()
+            self.clear_cache("processors")
+            logger.info(f"更新代加工人员成功: {nickname}")
+        except Exception as e:
+            logger.error(f"更新代加工人员失败: {e}")
+            raise e
+    
+    def delete_processor(self, processor_id: int):
+        """删除代加工人员"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            # 检查是否有关联的代加工订单
+            cursor.execute("SELECT COUNT(*) FROM processing_orders WHERE processor_id=?", (processor_id,))
+            order_count = cursor.fetchone()[0]
+            
+            if order_count > 0:
+                raise Exception(f"无法删除：该代加工人员还有 {order_count} 个关联订单")
+            
+            cursor.execute("DELETE FROM processors WHERE id=?", (processor_id,))
+            conn.commit()
+            conn.close()
+            self.clear_cache("processors")
+            logger.info(f"删除代加工人员成功: ID {processor_id}")
+        except Exception as e:
+            logger.error(f"删除代加工人员失败: {e}")
+            raise e
+    
+    def add_processing_order(self, processor_id: int, fabric_id: int = None, 
+                           fabric_meters_main: float = 0, fabric_meters_lining: float = 0,
+                           product_name: str = "", product_quantity: int = 1, 
+                           processing_days: int = 0, processing_cost: float = 0,
+                           selling_price: float = 0, start_date: str = None,
+                           expected_finish_date: str = None, notes: str = None):
+        """添加代加工订单"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO processing_orders 
+                (processor_id, fabric_id, fabric_meters_main, fabric_meters_lining,
+                 product_name, product_quantity, processing_days, processing_cost,
+                 selling_price, start_date, expected_finish_date, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (processor_id, fabric_id, fabric_meters_main, fabric_meters_lining,
+                  product_name, product_quantity, processing_days, processing_cost,
+                  selling_price, start_date, expected_finish_date, notes))
+            order_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+            self.clear_cache("processing_orders")
+            logger.info(f"添加代加工订单成功: {product_name}")
+            return order_id
+        except Exception as e:
+            logger.error(f"添加代加工订单失败: {e}")
+            raise e
+    
+    def get_processing_orders(self) -> List[Dict]:
+        """获取所有代加工订单"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT po.*, p.nickname as processor_name, f.name as fabric_name
+            FROM processing_orders po
+            LEFT JOIN processors p ON po.processor_id = p.id
+            LEFT JOIN fabrics f ON po.fabric_id = f.id
+            ORDER BY po.created_at DESC
+        """)
+        orders = []
+        for row in cursor.fetchall():
+            orders.append({
+                'id': row[0], 'processor_id': row[1], 'fabric_id': row[2],
+                'fabric_meters_main': row[3], 'fabric_meters_lining': row[4],
+                'product_name': row[5], 'product_quantity': row[6],
+                'processing_days': row[7], 'processing_cost': row[8],
+                'selling_price': row[9], 'status': row[10],
+                'start_date': row[11], 'expected_finish_date': row[12],
+                'actual_finish_date': row[13], 'notes': row[14],
+                'created_at': row[15], 'updated_at': row[16],
+                'processor_name': row[17], 'fabric_name': row[18]
+            })
+        conn.close()
+        return orders
+    
+    def get_processing_order_by_id(self, order_id: int):
+        """根据ID获取代加工订单"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT po.*, p.nickname as processor_name, f.name as fabric_name
+            FROM processing_orders po
+            LEFT JOIN processors p ON po.processor_id = p.id
+            LEFT JOIN fabrics f ON po.fabric_id = f.id
+            WHERE po.id=?
+        """, (order_id,))
+        row = cursor.fetchone()
+        
+        if row:
+            order = {
+                'id': row[0], 'processor_id': row[1], 'fabric_id': row[2],
+                'fabric_meters_main': row[3], 'fabric_meters_lining': row[4],
+                'product_name': row[5], 'product_quantity': row[6],
+                'processing_days': row[7], 'processing_cost': row[8],
+                'selling_price': row[9], 'status': row[10],
+                'start_date': row[11], 'expected_finish_date': row[12],
+                'actual_finish_date': row[13], 'notes': row[14],
+                'created_at': row[15], 'updated_at': row[16],
+                'processor_name': row[17], 'fabric_name': row[18]
+            }
+            conn.close()
+            return order
+        
+        conn.close()
+        return None
+    
+    def update_processing_order(self, order_id: int, processor_id: int, fabric_id: int = None,
+                              fabric_meters_main: float = 0, fabric_meters_lining: float = 0,
+                              product_name: str = "", product_quantity: int = 1,
+                              processing_days: int = 0, processing_cost: float = 0,
+                              selling_price: float = 0, status: str = "待发货",
+                              start_date: str = None, expected_finish_date: str = None,
+                              actual_finish_date: str = None, notes: str = None):
+        """更新代加工订单"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE processing_orders 
+                SET processor_id=?, fabric_id=?, fabric_meters_main=?, fabric_meters_lining=?,
+                    product_name=?, product_quantity=?, processing_days=?, processing_cost=?,
+                    selling_price=?, status=?, start_date=?, expected_finish_date=?,
+                    actual_finish_date=?, notes=?, updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+            """, (processor_id, fabric_id, fabric_meters_main, fabric_meters_lining,
+                  product_name, product_quantity, processing_days, processing_cost,
+                  selling_price, status, start_date, expected_finish_date,
+                  actual_finish_date, notes, order_id))
+            conn.commit()
+            conn.close()
+            self.clear_cache("processing_orders")
+            logger.info(f"更新代加工订单成功: {product_name}")
+        except Exception as e:
+            logger.error(f"更新代加工订单失败: {e}")
+            raise e
+    
+    def delete_processing_order(self, order_id: int):
+        """删除代加工订单"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM processing_orders WHERE id=?", (order_id,))
+            conn.commit()
+            conn.close()
+            self.clear_cache("processing_orders")
+            logger.info(f"删除代加工订单成功: ID {order_id}")
+        except Exception as e:
+            logger.error(f"删除代加工订单失败: {e}")
+            raise e
+    
+    def get_processor_statistics(self, processor_id: int):
+        """获取代加工人员统计信息"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # 获取订单统计
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_orders,
+                SUM(CASE WHEN status = '已完成' THEN 1 ELSE 0 END) as completed_orders,
+                SUM(CASE WHEN status = '进行中' THEN 1 ELSE 0 END) as ongoing_orders,
+                SUM(processing_cost) as total_cost,
+                SUM(selling_price) as total_revenue,
+                SUM(product_quantity) as total_products
+            FROM processing_orders 
+            WHERE processor_id = ?
+        """, (processor_id,))
+        
+        stats = cursor.fetchone()
+        conn.close()
+        
+        if stats:
+            return {
+                'total_orders': stats[0] or 0,
+                'completed_orders': stats[1] or 0,
+                'ongoing_orders': stats[2] or 0,
+                'total_cost': stats[3] or 0,
+                'total_revenue': stats[4] or 0,
+                'total_products': stats[5] or 0,
+                'profit': (stats[4] or 0) - (stats[3] or 0)
+            }
+        
+        return {
+            'total_orders': 0, 'completed_orders': 0, 'ongoing_orders': 0,
+            'total_cost': 0, 'total_revenue': 0, 'total_products': 0, 'profit': 0
+        }
     
     @cache_query(ttl=300, key_prefix="fabric_analysis")
     def get_fabric_usage_analysis(self):
