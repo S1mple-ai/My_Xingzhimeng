@@ -178,8 +178,8 @@ class DatabaseOptimizer:
     def create_indexes(self):
         """创建索引以提高查询性能"""
         indexes = [
-            "CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name)",
-            "CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone)",
+            "CREATE INDEX IF NOT EXISTS idx_customers_nickname ON customers(nickname)",
+            "CREATE INDEX IF NOT EXISTS idx_customers_phone_suffix ON customers(phone_suffix)",
             "CREATE INDEX IF NOT EXISTS idx_customers_created_at ON customers(created_at)",
             "CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id)",
             "CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)",

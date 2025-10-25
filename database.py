@@ -1193,6 +1193,11 @@ class DatabaseManager:
             
             conn.commit()
             conn.close()
+            
+            # 清理订单相关缓存
+            if success:
+                self.clear_cache("orders")
+                
             return success
         except Exception as e:
             conn.close()
@@ -1353,6 +1358,9 @@ class DatabaseManager:
             cursor.execute("UPDATE customers SET deleted = TRUE WHERE id=?", (customer_id,))
             conn.commit()
             conn.close()
+            
+            # 清理客户相关缓存
+            self.clear_cache("customers")
             
             logger.info(f"成功删除客户: {customer_id}, 强制删除: {force_delete}", "database")
             traditional_logger.info(f"Successfully deleted customer ID: {customer_id} (force_delete={force_delete})")
@@ -1610,6 +1618,10 @@ class DatabaseManager:
             cursor.execute("UPDATE fabrics SET deleted = TRUE WHERE id=?", (fabric_id,))
             conn.commit()
             conn.close()
+            
+            # 清理面料相关缓存
+            self.clear_cache("fabrics")
+            
             logger.info(f"Successfully deleted fabric ID: {fabric_id} (force_delete={force_delete})")
         except sqlite3.Error as e:
             logger.error(f"Error deleting fabric {fabric_id}: {e}")

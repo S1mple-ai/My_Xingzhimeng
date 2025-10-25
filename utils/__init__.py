@@ -5,6 +5,7 @@
 这些工具类可以被项目中的其他模块复用。
 """
 
-from .cache_manager import CacheManager
+# 注意：cache_manager已合并到根目录的cache_manager.py中
+# from .cache_manager import CacheManager
 
-__all__ = ['CacheManager']
+__all__ = []

@@ -299,6 +299,193 @@ def get_cache_info() -> Dict[str, Any]:
     return cache_manager.get_cache_info()
 
 
+class StreamlitCacheManager:
+    """
+    Streamlit专用缓存管理器
+    基于session_state的轻量级缓存实现
+    """
+    
+    def __init__(self):
+        """初始化缓存管理器"""
+        self.cache_prefix = "cache_"
+        self.time_prefix = "cache_time_"
+    
+    def generate_cache_key(self, func_name: str, key_prefix: str = "", *args, **kwargs) -> str:
+        """生成缓存键"""
+        cache_key = f"{key_prefix}_{func_name}" if key_prefix else func_name
+        
+        # 添加参数到缓存键
+        if args or kwargs:
+            params_str = str(args) + str(sorted(kwargs.items()))
+            cache_key += f"_{hashlib.md5(params_str.encode()).hexdigest()[:8]}"
+        
+        return cache_key
+    
+    def get(self, cache_key: str, ttl: int = 300) -> Optional[Any]:
+        """从缓存获取数据"""
+        try:
+            # 需要在Streamlit环境中使用
+            import streamlit as st
+            
+            full_cache_key = f"{self.cache_prefix}{cache_key}"
+            full_time_key = f"{self.time_prefix}{cache_key}"
+            
+            cached_result = st.session_state.get(full_cache_key)
+            if cached_result is not None:
+                cache_time = st.session_state.get(full_time_key, 0)
+                if (datetime.now().timestamp() - cache_time) < ttl:
+                    logger.debug(f"Streamlit缓存命中: {cache_key}")
+                    return cached_result
+                else:
+                    # 缓存过期，清理
+                    self._remove_cache_item(cache_key)
+                    logger.debug(f"Streamlit缓存过期: {cache_key}")
+            
+            return None
+            
+        except ImportError:
+            logger.warning("Streamlit未安装，无法使用StreamlitCacheManager")
+            return None
+        except Exception as e:
+            logger.warning(f"Streamlit缓存读取失败: {e}")
+            return None
+    
+    def set(self, cache_key: str, value: Any) -> bool:
+        """设置缓存数据"""
+        try:
+            import streamlit as st
+            
+            full_cache_key = f"{self.cache_prefix}{cache_key}"
+            full_time_key = f"{self.time_prefix}{cache_key}"
+            
+            st.session_state[full_cache_key] = value
+            st.session_state[full_time_key] = datetime.now().timestamp()
+            
+            logger.debug(f"Streamlit缓存存储: {cache_key}")
+            return True
+            
+        except ImportError:
+            logger.warning("Streamlit未安装，无法使用StreamlitCacheManager")
+            return False
+        except Exception as e:
+            logger.warning(f"Streamlit缓存存储失败: {e}")
+            return False
+    
+    def _remove_cache_item(self, cache_key: str):
+        """移除单个缓存项"""
+        try:
+            import streamlit as st
+            
+            full_cache_key = f"{self.cache_prefix}{cache_key}"
+            full_time_key = f"{self.time_prefix}{cache_key}"
+            
+            st.session_state.pop(full_cache_key, None)
+            st.session_state.pop(full_time_key, None)
+        except:
+            pass
+    
+    def clear(self, cache_prefix: str = None) -> int:
+        """清理缓存"""
+        try:
+            import streamlit as st
+            
+            keys_to_remove = []
+            
+            if cache_prefix:
+                # 清理特定前缀的缓存
+                target_cache_prefix = f"{self.cache_prefix}{cache_prefix}"
+                target_time_prefix = f"{self.time_prefix}{cache_prefix}"
+                
+                for key in list(st.session_state.keys()):
+                    if key.startswith(target_cache_prefix) or key.startswith(target_time_prefix):
+                        keys_to_remove.append(key)
+            else:
+                # 清理所有查询缓存
+                for key in list(st.session_state.keys()):
+                    if key.startswith(self.cache_prefix) or key.startswith(self.time_prefix):
+                        keys_to_remove.append(key)
+            
+            for key in keys_to_remove:
+                del st.session_state[key]
+            
+            logger.debug(f"清理Streamlit缓存: {len(keys_to_remove)} 项")
+            return len(keys_to_remove)
+            
+        except Exception as e:
+            logger.warning(f"Streamlit缓存清理失败: {e}")
+            return 0
+    
+    def get_cache_stats(self) -> dict:
+        """获取缓存统计信息"""
+        try:
+            import streamlit as st
+            
+            cache_items = 0
+            time_items = 0
+            total_size = 0
+            
+            for key, value in st.session_state.items():
+                if key.startswith(self.cache_prefix):
+                    cache_items += 1
+                    total_size += len(str(value))
+                elif key.startswith(self.time_prefix):
+                    time_items += 1
+            
+            return {
+                'cache_items': cache_items,
+                'time_items': time_items,
+                'total_items': cache_items + time_items,
+                'estimated_size_bytes': total_size,
+                'estimated_size_mb': round(total_size / (1024 * 1024), 2)
+            }
+            
+        except Exception as e:
+            logger.warning(f"获取Streamlit缓存统计失败: {e}")
+            return {
+                'cache_items': 0,
+                'time_items': 0,
+                'total_items': 0,
+                'estimated_size_bytes': 0,
+                'estimated_size_mb': 0
+            }
+
+
+# 全局缓存管理器实例
+streamlit_cache_manager = StreamlitCacheManager()
+
+
+def streamlit_cache_query(ttl: int = 300, key_prefix: str = ""):
+    """
+    Streamlit查询缓存装饰器
+    
+    Args:
+        ttl: 缓存时间（秒）
+        key_prefix: 缓存键前缀
+    """
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            # 生成缓存键
+            cache_key = streamlit_cache_manager.generate_cache_key(
+                func.__name__, key_prefix, *args, **kwargs
+            )
+            
+            # 尝试从缓存获取
+            cached_result = streamlit_cache_manager.get(cache_key, ttl)
+            if cached_result is not None:
+                return cached_result
+            
+            # 执行函数
+            result = func(*args, **kwargs)
+            
+            # 存储到缓存
+            streamlit_cache_manager.set(cache_key, result)
+            
+            return result
+        
+        return wrapper
+    return decorator
+
+
 # 示例使用
 if __name__ == "__main__":
     # 测试缓存功能

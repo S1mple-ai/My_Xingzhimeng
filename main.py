@@ -17,7 +17,7 @@ from auto_backup import check_and_perform_backup
 # 导入新的服务层和工具类
 from config import config
 from services import DashboardService, ExportService
-from utils import CacheManager
+from cache_manager import cache_manager
 from performance_monitor import PerformanceMonitor, monitor_execution_time
 from ui_components_extended import create_advanced_data_table, create_search_filter_panel, create_dashboard_stats
 from database_optimizer import initialize_database_optimization, OptimizedQueries, monitor_query_performance
@@ -112,7 +112,6 @@ def init_services():
     db = init_database()
     dashboard_service = DashboardService(db)
     export_service = ExportService(db)
-    cache_manager = CacheManager()
     return db, dashboard_service, export_service, cache_manager
 
 @st.cache_resource
@@ -979,20 +978,20 @@ elif selected == "👥 客户管理":
                                     @crud_operation(
                                         operation_type="delete",
                                         module="customers",
-                                        success_message="客户已删除",
+                                        success_message=f"客户 '{customer['nickname']}' 删除成功！",
                                         error_message="删除客户失败"
                                     )
                                     def delete_customer_operation():
-                                        result = safe_delete_customer(customer['id'])
-                                        if result:
-                                            # 清理状态
-                                            st.session_state[delete_key] = False
-                                            if confirm_key in st.session_state:
-                                                del st.session_state[confirm_key]
-                                        return result
-                                    
-                                    if not delete_customer_operation():
+                                        # 使用缓存的数据库连接
+                                        db = init_database()
+                                        db.delete_customer(customer['id'], force_delete=True)
+                                        # 清理状态
                                         st.session_state[delete_key] = False
+                                        if confirm_key in st.session_state:
+                                            del st.session_state[confirm_key]
+                                        return True
+                                    
+                                    delete_customer_operation()
                             with col2:
                                 if st.button("❌ 取消", key=f"cancel_{customer['id']}"):
                                     st.session_state[delete_key] = False
@@ -2337,191 +2336,9 @@ elif selected == "⚙️ 系统设置":
         st.info("最后更新：2025-10-17")
     
     with tab4:
-        st.markdown("### 📋 日志管理")
-        
-        # 导入日志模块
-        import os
-        import glob
-        from datetime import datetime, timedelta
-        
-        # 日志文件目录
-        log_dir = "logs"
-        
-        # 创建日志目录（如果不存在）
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-        
-        # 日志统计信息
-        st.markdown("#### 📊 日志统计")
-        col1, col2, col3, col4 = st.columns(4)
-        
-        # 获取日志文件列表
-        log_files = glob.glob(os.path.join(log_dir, "*.log"))
-        
-        with col1:
-            st.metric("📁 日志文件数", len(log_files))
-        
-        with col2:
-            # 计算总日志大小
-            total_size = sum(os.path.getsize(f) for f in log_files if os.path.exists(f))
-            st.metric("💾 总大小", f"{total_size / 1024:.1f} KB")
-        
-        with col3:
-            # 今日错误数量（从error.log中统计）
-            error_count = 0
-            error_log_path = os.path.join(log_dir, "error.log")
-            if os.path.exists(error_log_path):
-                try:
-                    with open(error_log_path, 'r', encoding='utf-8') as f:
-                        today = datetime.now().strftime("%Y-%m-%d")
-                        error_count = sum(1 for line in f if today in line and "ERROR" in line)
-                except:
-                    error_count = 0
-            st.metric("❌ 今日错误", error_count)
-        
-        with col4:
-            # 最新日志时间
-            latest_time = "无"
-            if log_files:
-                latest_file = max(log_files, key=os.path.getmtime)
-                latest_time = datetime.fromtimestamp(os.path.getmtime(latest_file)).strftime("%H:%M:%S")
-            st.metric("🕐 最新日志", latest_time)
-        
-        st.markdown("---")
-        
-        # 日志查看器
-        st.markdown("#### 📖 日志查看器")
-        
-        # 日志类型选择
-        log_types = ["app.log", "error.log", "debug.log", "performance.log", "database.log"]
-        selected_log_type = st.selectbox("选择日志类型", log_types, key="log_type_selector")
-        
-        # 日志级别过滤
-        log_levels = ["全部", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-        selected_level = st.selectbox("日志级别", log_levels, key="log_level_filter")
-        
-        # 搜索功能
-        search_term = st.text_input("🔍 搜索关键词", placeholder="输入要搜索的内容...", key="log_search")
-        
-        # 显示行数控制
-        max_lines = st.slider("显示行数", 10, 1000, 100, key="log_max_lines")
-        
-        # 操作按钮
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            if st.button("🔄 刷新日志", use_container_width=True):
-                st.rerun()
-        
-        with col2:
-            if st.button("📥 下载日志", use_container_width=True):
-                log_file_path = os.path.join(log_dir, selected_log_type)
-                if os.path.exists(log_file_path):
-                    with open(log_file_path, 'r', encoding='utf-8') as f:
-                        log_content = f.read()
-                    st.download_button(
-                        label="💾 下载文件",
-                        data=log_content,
-                        file_name=f"{selected_log_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
-                        mime="text/plain"
-                    )
-                else:
-                    st.warning("日志文件不存在")
-        
-        with col3:
-            if st.button("🗑️ 清理日志", use_container_width=True):
-                if st.session_state.get('confirm_clear_logs', False):
-                    # 执行清理
-                    try:
-                        for log_file in log_files:
-                            if os.path.exists(log_file):
-                                os.remove(log_file)
-                        st.success("✅ 日志文件已清理")
-                        st.session_state['confirm_clear_logs'] = False
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"❌ 清理失败: {str(e)}")
-                else:
-                    st.session_state['confirm_clear_logs'] = True
-                    st.warning("⚠️ 再次点击确认清理所有日志文件")
-        
-        # 显示日志内容
-        st.markdown("#### 📄 日志内容")
-        
-        log_file_path = os.path.join(log_dir, selected_log_type)
-        
-        if os.path.exists(log_file_path):
-            try:
-                with open(log_file_path, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
-                
-                # 反转行顺序，显示最新的日志
-                lines = lines[::-1]
-                
-                # 应用过滤器
-                filtered_lines = []
-                for line in lines:
-                    # 级别过滤
-                    if selected_level != "全部" and selected_level not in line:
-                        continue
-                    
-                    # 搜索过滤
-                    if search_term and search_term.lower() not in line.lower():
-                        continue
-                    
-                    filtered_lines.append(line)
-                    
-                    # 限制显示行数
-                    if len(filtered_lines) >= max_lines:
-                        break
-                
-                if filtered_lines:
-                    # 使用代码块显示日志，保持格式
-                    log_content = ''.join(filtered_lines)
-                    st.code(log_content, language="text")
-                    
-                    # 显示统计信息
-                    st.info(f"📊 显示 {len(filtered_lines)} 行日志（共 {len(lines)} 行）")
-                else:
-                    st.warning("🔍 没有找到匹配的日志记录")
-                    
-            except Exception as e:
-                st.error(f"❌ 读取日志文件失败: {str(e)}")
-        else:
-            st.info(f"📝 日志文件 {selected_log_type} 尚未创建")
-            st.markdown("当系统开始记录日志后，这里将显示相关内容。")
-        
-        # 实时日志监控
-        st.markdown("---")
-        st.markdown("#### 🔴 实时监控")
-        
-        if st.checkbox("启用实时日志监控", key="real_time_monitor"):
-            # 创建一个占位符用于实时更新
-            log_placeholder = st.empty()
-            
-            # 监控最新的错误日志
-            error_log_path = os.path.join(log_dir, "error.log")
-            if os.path.exists(error_log_path):
-                try:
-                    with open(error_log_path, 'r', encoding='utf-8') as f:
-                        lines = f.readlines()
-                    
-                    # 显示最新的5条错误日志
-                    recent_errors = lines[-5:] if lines else []
-                    if recent_errors:
-                        with log_placeholder.container():
-                            st.markdown("**最新错误日志：**")
-                            for line in recent_errors:
-                                if "ERROR" in line or "CRITICAL" in line:
-                                    st.error(line.strip())
-                                elif "WARNING" in line:
-                                    st.warning(line.strip())
-                    else:
-                        log_placeholder.info("✅ 暂无错误日志")
-                except:
-                    log_placeholder.error("❌ 无法读取实时日志")
-            else:
-                log_placeholder.info("📝 错误日志文件尚未创建")
+        # 使用增强的日志查看器
+        from enhanced_log_viewer import render_enhanced_log_viewer
+        render_enhanced_log_viewer()
 
 # 页脚
 st.markdown("---")
