@@ -833,12 +833,12 @@ def _show_view_modal(item_data, card_type, key_prefix):
 
 
 def _show_delete_modal(item_data, card_type, key_prefix, on_delete):
-    """显示删除确认弹窗"""
+    """显示删除确认界面"""
     modal_key = f"delete_modal_{key_prefix}_{item_data.get('id')}"
+    item_name = item_data.get('name' if card_type == 'fabric' else 'product_name', '未知项目')
     
-    @st.dialog(f"🗑️ 删除确认")
-    def delete_modal():
-        item_name = item_data.get('name' if card_type == 'fabric' else 'product_name', '未知项目')
+    # 使用expander创建删除确认界面
+    with st.expander(f"🗑️ 删除确认 - {item_name}", expanded=True):
         st.warning(f"⚠️ 确定要删除 **{item_name}** 吗？")
         st.write("此操作不可撤销，请谨慎操作。")
         
@@ -847,11 +847,11 @@ def _show_delete_modal(item_data, card_type, key_prefix, on_delete):
             if st.button("🗑️ 确认删除", type="primary", key=f"{modal_key}_confirm"):
                 if on_delete:
                     on_delete(item_data)
+                # 清除删除确认状态
                 st.session_state[f"show_delete_modal_{key_prefix}_{item_data.get('id')}"] = False
                 st.rerun()
         with col2:
             if st.button("❌ 取消", key=f"{modal_key}_cancel"):
+                # 清除删除确认状态
                 st.session_state[f"show_delete_modal_{key_prefix}_{item_data.get('id')}"] = False
                 st.rerun()
-    
-    delete_modal()
