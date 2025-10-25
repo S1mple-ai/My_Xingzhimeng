@@ -1,0 +1,368 @@
+{
+  "backup_date": "2025-10-24",
+  "backup_time": "2025-10-24 18:31:26",
+  "data_type": "customers",
+  "count": 40,
+  "data": [
+    {
+      "id": 40,
+      "nickname": "测试2",
+      "phone_suffix": "1222",
+      "points": 196,
+      "notes": "",
+      "created_at": "2025-10-20 08:17:02",
+      "updated_at": "2025-10-21 07:29:02"
+    },
+    {
+      "id": 39,
+      "nickname": "测试专用",
+      "phone_suffix": "8888",
+      "points": 190,
+      "notes": "",
+      "created_at": "2025-10-19 09:56:04",
+      "updated_at": "2025-10-19 09:59:44"
+    },
+    {
+      "id": 38,
+      "nickname": "哪吒",
+      "phone_suffix": "",
+      "points": 168,
+      "notes": "",
+      "created_at": "2025-10-16 13:07:49",
+      "updated_at": "2025-10-19 09:34:04"
+    },
+    {
+      "id": 37,
+      "nickname": "Tohsa",
+      "phone_suffix": "",
+      "points": 131,
+      "notes": "",
+      "created_at": "2025-10-16 13:07:45",
+      "updated_at": "2025-10-16 17:00:25"
+    },
+    {
+      "id": 36,
+      "nickname": "地瓜",
+      "phone_suffix": "",
+      "points": 306,
+      "notes": "",
+      "created_at": "2025-10-16 13:07:41",
+      "updated_at": "2025-10-16 13:08:11"
+    },
+    {
+      "id": 35,
+      "nickname": "可喜可乐",
+      "phone_suffix": "",
+      "points": 103,
+      "notes": "",
+      "created_at": "2025-10-16 13:07:37",
+      "updated_at": "2025-10-16 13:08:17"
+    },
+    {
+      "id": 34,
+      "nickname": "挚爱山楂",
+      "phone_suffix": "",
+      "points": 184,
+      "notes": "",
+      "created_at": "2025-10-16 13:07:33",
+      "updated_at": "2025-10-16 13:08:24"
+    },
+    {
+      "id": 33,
+      "nickname": "挚爱山楂",
+      "phone_suffix": "",
+      "points": 0,
+      "notes": "",
+      "created_at": "2025-10-16 13:07:32",
+      "updated_at": "2025-10-16 13:07:32"
+    },
+    {
+      "id": 32,
+      "nickname": "困困小羊咩",
+      "phone_suffix": "",
+      "points": 302,
+      "notes": "",
+      "created_at": "2025-10-16 13:07:29",
+      "updated_at": "2025-10-16 13:08:29"
+    },
+    {
+      "id": 31,
+      "nickname": "爱下小雨",
+      "phone_suffix": "",
+      "points": 168,
+      "notes": "",
+      "created_at": "2025-10-16 13:07:24",
+      "updated_at": "2025-10-16 13:08:37"
+    },
+    {
+      "id": 30,
+      "nickname": "abcd",
+      "phone_suffix": "",
+      "points": 0,
+      "notes": "",
+      "created_at": "2025-10-16 13:07:19",
+      "updated_at": "2025-10-16 13:07:19"
+    },
+    {
+      "id": 29,
+      "nickname": "su",
+      "phone_suffix": "",
+      "points": 543,
+      "notes": "",
+      "created_at": "2025-10-16 13:07:10",
+      "updated_at": "2025-10-16 13:08:44"
+    },
+    {
+      "id": 28,
+      "nickname": "妮可拉基芭岛ಣ",
+      "phone_suffix": "",
+      "points": 0,
+      "notes": "",
+      "created_at": "2025-10-16 13:07:06",
+      "updated_at": "2025-10-16 13:07:06"
+    },
+    {
+      "id": 27,
+      "nickname": "糖拌月光",
+      "phone_suffix": "",
+      "points": 254,
+      "notes": "",
+      "created_at": "2025-10-16 13:07:01",
+      "updated_at": "2025-10-16 13:08:51"
+    },
+    {
+      "id": 26,
+      "nickname": "爱吃炸鸡",
+      "phone_suffix": "",
+      "points": 138,
+      "notes": "",
+      "created_at": "2025-10-16 13:06:58",
+      "updated_at": "2025-10-16 13:09:00"
+    },
+    {
+      "id": 25,
+      "nickname": "满满",
+      "phone_suffix": "",
+      "points": 344,
+      "notes": "",
+      "created_at": "2025-10-16 13:06:54",
+      "updated_at": "2025-10-16 13:09:13"
+    },
+    {
+      "id": 24,
+      "nickname": "月亮没有今晚",
+      "phone_suffix": "5994",
+      "points": 296,
+      "notes": "",
+      "created_at": "2025-10-16 13:06:50",
+      "updated_at": "2025-10-16 17:14:26"
+    },
+    {
+      "id": 23,
+      "nickname": "嗨嗨嗨",
+      "phone_suffix": "",
+      "points": 322,
+      "notes": "",
+      "created_at": "2025-10-16 13:06:45",
+      "updated_at": "2025-10-16 13:09:32"
+    },
+    {
+      "id": 22,
+      "nickname": "小二乔",
+      "phone_suffix": "",
+      "points": 244,
+      "notes": "",
+      "created_at": "2025-10-16 13:06:41",
+      "updated_at": "2025-10-16 13:09:38"
+    },
+    {
+      "id": 21,
+      "nickname": "活披萨",
+      "phone_suffix": "",
+      "points": 342,
+      "notes": "",
+      "created_at": "2025-10-16 13:06:36",
+      "updated_at": "2025-10-16 13:09:45"
+    },
+    {
+      "id": 20,
+      "nickname": "禁止下雨",
+      "phone_suffix": "",
+      "points": 495,
+      "notes": "",
+      "created_at": "2025-10-16 13:06:31",
+      "updated_at": "2025-10-16 13:10:02"
+    },
+    {
+      "id": 19,
+      "nickname": "肉桂卷卷",
+      "phone_suffix": "",
+      "points": 1201,
+      "notes": "",
+      "created_at": "2025-10-16 13:06:27",
+      "updated_at": "2025-10-16 13:10:08"
+    },
+    {
+      "id": 18,
+      "nickname": "张张",
+      "phone_suffix": "",
+      "points": 522,
+      "notes": "",
+      "created_at": "2025-10-16 13:06:23",
+      "updated_at": "2025-10-16 13:10:14"
+    },
+    {
+      "id": 17,
+      "nickname": "小豆豆",
+      "phone_suffix": "",
+      "points": 1351,
+      "notes": "",
+      "created_at": "2025-10-16 13:06:20",
+      "updated_at": "2025-10-16 13:10:19"
+    },
+    {
+      "id": 16,
+      "nickname": "鸡蛋",
+      "phone_suffix": "",
+      "points": 176,
+      "notes": "",
+      "created_at": "2025-10-16 13:06:17",
+      "updated_at": "2025-10-16 13:10:24"
+    },
+    {
+      "id": 15,
+      "nickname": "挞挞",
+      "phone_suffix": "",
+      "points": 509,
+      "notes": "",
+      "created_at": "2025-10-16 13:06:13",
+      "updated_at": "2025-10-16 13:10:32"
+    },
+    {
+      "id": 14,
+      "nickname": "佳人",
+      "phone_suffix": "",
+      "points": 756,
+      "notes": "",
+      "created_at": "2025-10-16 13:06:09",
+      "updated_at": "2025-10-16 13:10:40"
+    },
+    {
+      "id": 13,
+      "nickname": "小熊软糖",
+      "phone_suffix": "",
+      "points": 630,
+      "notes": "",
+      "created_at": "2025-10-16 13:06:04",
+      "updated_at": "2025-10-16 13:10:48"
+    },
+    {
+      "id": 12,
+      "nickname": "JOJO",
+      "phone_suffix": "",
+      "points": 146,
+      "notes": "",
+      "created_at": "2025-10-16 13:06:00",
+      "updated_at": "2025-10-16 13:10:54"
+    },
+    {
+      "id": 11,
+      "nickname": "钴",
+      "phone_suffix": "",
+      "points": 481,
+      "notes": "",
+      "created_at": "2025-10-16 13:05:51",
+      "updated_at": "2025-10-16 13:11:00"
+    },
+    {
+      "id": 10,
+      "nickname": "小雨天气",
+      "phone_suffix": "",
+      "points": 1458,
+      "notes": "",
+      "created_at": "2025-10-16 13:05:46",
+      "updated_at": "2025-10-16 13:11:06"
+    },
+    {
+      "id": 9,
+      "nickname": "包包大人",
+      "phone_suffix": "",
+      "points": 28,
+      "notes": "",
+      "created_at": "2025-10-16 13:05:27",
+      "updated_at": "2025-10-16 13:11:14"
+    },
+    {
+      "id": 8,
+      "nickname": "一条纯爱鱼",
+      "phone_suffix": "",
+      "points": 600,
+      "notes": "",
+      "created_at": "2025-10-16 13:05:23",
+      "updated_at": "2025-10-16 13:11:19"
+    },
+    {
+      "id": 7,
+      "nickname": "嘟嘟咩",
+      "phone_suffix": "",
+      "points": 138,
+      "notes": "",
+      "created_at": "2025-10-16 13:05:19",
+      "updated_at": "2025-10-16 13:11:26"
+    },
+    {
+      "id": 6,
+      "nickname": "玛卡巴卡的小小推车",
+      "phone_suffix": "",
+      "points": 620,
+      "notes": "",
+      "created_at": "2025-10-16 13:05:15",
+      "updated_at": "2025-10-16 13:11:31"
+    },
+    {
+      "id": 5,
+      "nickname": "草莓尖尖蛋糕",
+      "phone_suffix": "8028",
+      "points": 248,
+      "notes": "",
+      "created_at": "2025-10-16 13:05:10",
+      "updated_at": "2025-10-16 17:09:34"
+    },
+    {
+      "id": 4,
+      "nickname": "Tino",
+      "phone_suffix": "",
+      "points": 0,
+      "notes": "",
+      "created_at": "2025-10-16 13:05:05",
+      "updated_at": "2025-10-16 13:05:05"
+    },
+    {
+      "id": 3,
+      "nickname": "𝐡𝐢𝐜𝐤𝐞𝐲",
+      "phone_suffix": "",
+      "points": 318,
+      "notes": "",
+      "created_at": "2025-10-16 13:04:59",
+      "updated_at": "2025-10-16 13:11:43"
+    },
+    {
+      "id": 2,
+      "nickname": "梦睿",
+      "phone_suffix": "",
+      "points": 164,
+      "notes": "",
+      "created_at": "2025-10-16 13:04:54",
+      "updated_at": "2025-10-16 13:11:48"
+    },
+    {
+      "id": 1,
+      "nickname": "薯条",
+      "phone_suffix": "5822",
+      "points": 6220,
+      "notes": "",
+      "created_at": "2025-10-13 10:21:05",
+      "updated_at": "2025-10-16 13:04:37"
+    }
+  ]
+}

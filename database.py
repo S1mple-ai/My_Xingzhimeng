@@ -8,9 +8,15 @@ from functools import wraps
 import hashlib
 import json
 
-# 配置日志
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# 导入新的日志模块
+from utils.logger import SystemLogger, log_exceptions, log_database_operation, log_performance
+from utils.exception_handler import database_safe
+
+# 初始化日志系统
+logger = SystemLogger()
+
+# 保持兼容性的传统logger
+traditional_logger = logging.getLogger(__name__)
 
 # 缓存装饰器
 def cache_query(ttl: int = 300, key_prefix: str = ""):
@@ -58,9 +64,12 @@ def cache_query(ttl: int = 300, key_prefix: str = ""):
     return decorator
 
 class DatabaseManager:
+    @log_exceptions()
     def __init__(self, db_path: str = "business_management.db"):
         self.db_path = db_path
+        logger.info(f"初始化数据库管理器: {db_path}", "database")
         self.init_database()
+        logger.info(f"数据库管理器初始化完成: {db_path}", "database")
     
     def clear_cache(self, cache_prefix: str = None):
         """清理缓存"""
@@ -138,6 +147,19 @@ class DatabaseManager:
             # 字段已存在，忽略错误
             pass
         
+        # 为客户表添加软删除字段
+        try:
+            cursor.execute('ALTER TABLE customers ADD COLUMN deleted BOOLEAN DEFAULT FALSE')
+        except sqlite3.OperationalError:
+            # 字段已存在，忽略错误
+            pass
+        
+        # 为面料表添加软删除字段
+        try:
+            cursor.execute('ALTER TABLE fabrics ADD COLUMN deleted BOOLEAN DEFAULT FALSE')
+        except sqlite3.OperationalError:
+            # 字段已存在，忽略错误
+            pass
 
         
         # 库存表
@@ -179,6 +201,20 @@ class DatabaseManager:
         # 为已存在的orders表添加points_awarded字段（如果不存在）
         try:
             cursor.execute("ALTER TABLE orders ADD COLUMN points_awarded BOOLEAN DEFAULT FALSE")
+        except sqlite3.OperationalError:
+            # 字段已存在，忽略错误
+            pass
+        
+        # 为库存表添加软删除字段
+        try:
+            cursor.execute('ALTER TABLE inventory ADD COLUMN deleted BOOLEAN DEFAULT FALSE')
+        except sqlite3.OperationalError:
+            # 字段已存在，忽略错误
+            pass
+        
+        # 为订单表添加客户名称快照字段
+        try:
+            cursor.execute('ALTER TABLE orders ADD COLUMN customer_name_snapshot TEXT')
         except sqlite3.OperationalError:
             # 字段已存在，忽略错误
             pass
@@ -266,6 +302,25 @@ class DatabaseManager:
             cursor.execute('ALTER TABLE order_items_new RENAME TO order_items')
         except sqlite3.OperationalError:
             # 如果操作失败，说明表结构已经正确
+            pass
+        
+        # 为订单商品表添加名称快照字段
+        try:
+            cursor.execute('ALTER TABLE order_items ADD COLUMN inventory_name_snapshot TEXT')
+        except sqlite3.OperationalError:
+            # 字段已存在，忽略错误
+            pass
+        
+        try:
+            cursor.execute('ALTER TABLE order_items ADD COLUMN outer_fabric_name_snapshot TEXT')
+        except sqlite3.OperationalError:
+            # 字段已存在，忽略错误
+            pass
+        
+        try:
+            cursor.execute('ALTER TABLE order_items ADD COLUMN inner_fabric_name_snapshot TEXT')
+        except sqlite3.OperationalError:
+            # 字段已存在，忽略错误
             pass
         
         # 代加工人员表
@@ -386,23 +441,31 @@ class DatabaseManager:
             logger.error(f"更新代加工人员失败: {e}")
             raise e
     
-    def delete_processor(self, processor_id: int):
-        """删除代加工人员"""
+    def delete_processor(self, processor_id: int, force_delete: bool = True):
+        """删除代加工人员
+        
+        Args:
+            processor_id: 处理器ID
+            force_delete: 是否强制删除（忽略关联订单检查），默认为True
+        """
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            # 检查是否有关联的代加工订单
-            cursor.execute("SELECT COUNT(*) FROM processing_orders WHERE processor_id=?", (processor_id,))
-            order_count = cursor.fetchone()[0]
             
-            if order_count > 0:
-                raise Exception(f"无法删除：该代加工人员还有 {order_count} 个关联订单")
+            # 如果不是强制删除，检查是否有关联的代加工订单
+            if not force_delete:
+                cursor.execute("SELECT COUNT(*) FROM processing_orders WHERE processor_id=?", (processor_id,))
+                order_count = cursor.fetchone()[0]
+                
+                if order_count > 0:
+                    raise Exception(f"无法删除：该代加工人员还有 {order_count} 个关联订单")
             
+            # 直接删除处理器（强制删除模式下忽略关联订单）
             cursor.execute("DELETE FROM processors WHERE id=?", (processor_id,))
             conn.commit()
             conn.close()
             self.clear_cache("processors")
-            logger.info(f"删除代加工人员成功: ID {processor_id}")
+            logger.info(f"删除代加工人员成功: ID {processor_id} (force_delete={force_delete})")
         except Exception as e:
             logger.error(f"删除代加工人员失败: {e}")
             raise e
@@ -1223,7 +1286,7 @@ class DatabaseManager:
         """获取所有客户"""
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM customers ORDER BY created_at DESC")
+        cursor.execute("SELECT * FROM customers WHERE deleted = FALSE OR deleted IS NULL ORDER BY created_at DESC")
         customers = []
         for row in cursor.fetchall():
             customers.append({
@@ -1247,33 +1310,52 @@ class DatabaseManager:
             conn.commit()
             conn.close()
             logger.info(f"Successfully updated customer ID: {customer_id}")
+            return True
         except sqlite3.Error as e:
             logger.error(f"Error updating customer {customer_id}: {e}")
             if 'conn' in locals():
                 conn.close()
             raise Exception(f"更新客户信息失败: {str(e)}")
     
-    def delete_customer(self, customer_id: int):
-        """删除客户"""
+    @log_exceptions()
+    @log_database_operation("delete", "customers")
+    @log_performance()
+    def delete_customer(self, customer_id: int, force_delete: bool = True):
+        """删除客户
+        
+        Args:
+            customer_id: 客户ID
+            force_delete: 是否强制删除（忽略关联订单检查），默认为True
+        """
         try:
+            logger.info(f"开始删除客户: {customer_id}, 强制删除: {force_delete}", "database")
+            
             conn = self.get_connection()
             cursor = conn.cursor()
             
             # 检查客户是否存在
             cursor.execute("SELECT id FROM customers WHERE id=?", (customer_id,))
             if not cursor.fetchone():
-                raise Exception(f"客户ID {customer_id} 不存在")
+                error_msg = f"客户ID {customer_id} 不存在"
+                logger.error(error_msg)
+                raise Exception(error_msg)
             
-            # 检查是否有关联订单
-            cursor.execute("SELECT COUNT(*) FROM orders WHERE customer_id=?", (customer_id,))
-            order_count = cursor.fetchone()[0]
-            if order_count > 0:
-                raise Exception(f"无法删除客户，该客户有 {order_count} 个关联订单")
+            # 如果不是强制删除，检查是否有关联订单
+            if not force_delete:
+                cursor.execute("SELECT COUNT(*) FROM orders WHERE customer_id=?", (customer_id,))
+                order_count = cursor.fetchone()[0]
+                if order_count > 0:
+                    error_msg = f"无法删除客户，该客户有 {order_count} 个关联订单"
+                    logger.error(error_msg)
+                    raise Exception(error_msg)
             
-            cursor.execute("DELETE FROM customers WHERE id=?", (customer_id,))
+            # 软删除客户（标记为已删除而不是物理删除）
+            cursor.execute("UPDATE customers SET deleted = TRUE WHERE id=?", (customer_id,))
             conn.commit()
             conn.close()
-            logger.info(f"Successfully deleted customer ID: {customer_id}")
+            
+            logger.info(f"成功删除客户: {customer_id}, 强制删除: {force_delete}", "database")
+            traditional_logger.info(f"Successfully deleted customer ID: {customer_id} (force_delete={force_delete})")
         except sqlite3.Error as e:
             logger.error(f"Error deleting customer {customer_id}: {e}")
             if 'conn' in locals():
@@ -1437,9 +1519,9 @@ class DatabaseManager:
         conn = self.get_connection()
         cursor = conn.cursor()
         if usage_type:
-            cursor.execute("SELECT * FROM fabrics WHERE usage_type=? ORDER BY created_at DESC", (usage_type,))
+            cursor.execute("SELECT * FROM fabrics WHERE usage_type=? AND (deleted = FALSE OR deleted IS NULL) ORDER BY created_at DESC", (usage_type,))
         else:
-            cursor.execute("SELECT * FROM fabrics ORDER BY created_at DESC")
+            cursor.execute("SELECT * FROM fabrics WHERE deleted = FALSE OR deleted IS NULL ORDER BY created_at DESC")
         
         fabrics = []
         for row in cursor.fetchall():
@@ -1454,7 +1536,7 @@ class DatabaseManager:
         """根据ID获取单个面料"""
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM fabrics WHERE id=?", (fabric_id,))
+        cursor.execute("SELECT * FROM fabrics WHERE id=? AND (deleted = FALSE OR deleted IS NULL)", (fabric_id,))
         row = cursor.fetchone()
         
         if row:
@@ -1491,14 +1573,20 @@ class DatabaseManager:
             conn.commit()
             conn.close()
             logger.info(f"Successfully updated fabric ID: {fabric_id}")
+            return True
         except sqlite3.Error as e:
             logger.error(f"Error updating fabric {fabric_id}: {e}")
             if 'conn' in locals():
                 conn.close()
             raise Exception(f"更新面料失败: {str(e)}")
     
-    def delete_fabric(self, fabric_id: int):
-        """删除面料"""
+    def delete_fabric(self, fabric_id: int, force_delete: bool = True):
+        """删除面料
+        
+        Args:
+            fabric_id: 面料ID
+            force_delete: 是否强制删除（忽略关联订单检查），默认为True
+        """
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
@@ -1508,19 +1596,21 @@ class DatabaseManager:
             if not cursor.fetchone():
                 raise Exception(f"面料ID {fabric_id} 不存在")
             
-            # 检查是否有关联的订单项记录（作为外布或内布）
-            cursor.execute("""
-                SELECT COUNT(*) FROM order_items 
-                WHERE outer_fabric_id=? OR inner_fabric_id=?
-            """, (fabric_id, fabric_id))
-            order_items_count = cursor.fetchone()[0]
-            if order_items_count > 0:
-                raise Exception(f"无法删除面料，该面料有 {order_items_count} 个关联订单记录")
+            # 如果不是强制删除，检查是否有关联的订单项记录（作为外布或内布）
+            if not force_delete:
+                cursor.execute("""
+                    SELECT COUNT(*) FROM order_items 
+                    WHERE outer_fabric_id=? OR inner_fabric_id=?
+                """, (fabric_id, fabric_id))
+                order_items_count = cursor.fetchone()[0]
+                if order_items_count > 0:
+                    raise Exception(f"无法删除面料，该面料有 {order_items_count} 个关联订单记录")
             
-            cursor.execute("DELETE FROM fabrics WHERE id=?", (fabric_id,))
+            # 软删除面料（标记为已删除而不是物理删除）
+            cursor.execute("UPDATE fabrics SET deleted = TRUE WHERE id=?", (fabric_id,))
             conn.commit()
             conn.close()
-            logger.info(f"Successfully deleted fabric ID: {fabric_id}")
+            logger.info(f"Successfully deleted fabric ID: {fabric_id} (force_delete={force_delete})")
         except sqlite3.Error as e:
             logger.error(f"Error deleting fabric {fabric_id}: {e}")
             if 'conn' in locals():
@@ -1553,7 +1643,7 @@ class DatabaseManager:
         """获取库存商品"""
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM inventory ORDER BY created_at DESC")
+        cursor.execute("SELECT * FROM inventory WHERE deleted = FALSE OR deleted IS NULL ORDER BY created_at DESC")
         
         items = []
         for row in cursor.fetchall():
@@ -1590,20 +1680,26 @@ class DatabaseManager:
         conn.close()
         return success
     
-    def delete_inventory_item(self, item_id: int) -> bool:
-        """删除库存商品"""
+    def delete_inventory_item(self, item_id: int, force_delete: bool = True) -> bool:
+        """删除库存商品
+        
+        Args:
+            item_id: 商品ID
+            force_delete: 是否强制删除（忽略关联订单检查）
+        """
         conn = self.get_connection()
         cursor = conn.cursor()
         
-        # 检查是否有订单使用此商品
-        cursor.execute("SELECT COUNT(*) FROM order_items WHERE inventory_id=?", (item_id,))
-        order_count = cursor.fetchone()[0]
+        # 如果不是强制删除，检查是否有订单使用此商品
+        if not force_delete:
+            cursor.execute("SELECT COUNT(*) FROM order_items WHERE inventory_id=?", (item_id,))
+            order_count = cursor.fetchone()[0]
+            
+            if order_count > 0:
+                conn.close()
+                return False  # 有订单使用，不能删除
         
-        if order_count > 0:
-            conn.close()
-            return False  # 有订单使用，不能删除
-        
-        cursor.execute("DELETE FROM inventory WHERE id=?", (item_id,))
+        cursor.execute("UPDATE inventory SET deleted = TRUE WHERE id=?", (item_id,))
         success = cursor.rowcount > 0
         conn.commit()
         conn.close()
@@ -1613,7 +1709,7 @@ class DatabaseManager:
         """根据ID获取库存商品"""
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM inventory WHERE id=?", (item_id,))
+        cursor.execute("SELECT * FROM inventory WHERE id=? AND (deleted = FALSE OR deleted IS NULL)", (item_id,))
         row = cursor.fetchone()
         
         if row:
@@ -1633,9 +1729,15 @@ class DatabaseManager:
         """创建订单"""
         conn = self.get_connection()
         cursor = conn.cursor()
+        
+        # 获取客户名称快照（只获取未删除的客户）
+        cursor.execute("SELECT nickname FROM customers WHERE id = ? AND (deleted = FALSE OR deleted IS NULL)", (customer_id,))
+        customer_result = cursor.fetchone()
+        customer_name_snapshot = customer_result[0] if customer_result else None
+        
         cursor.execute(
-            "INSERT INTO orders (customer_id, notes, image_path) VALUES (?, ?, ?)",
-            (customer_id, notes, image_path)
+            "INSERT INTO orders (customer_id, notes, image_path, customer_name_snapshot) VALUES (?, ?, ?, ?)",
+            (customer_id, notes, image_path, customer_name_snapshot)
         )
         order_id = cursor.lastrowid
         conn.commit()
@@ -1656,11 +1758,33 @@ class DatabaseManager:
         outer_fabric_id = kwargs.get('outer_fabric_id')
         inner_fabric_id = kwargs.get('inner_fabric_id')
         
+        # 获取名称快照
+        inventory_name_snapshot = None
+        outer_fabric_name_snapshot = None
+        inner_fabric_name_snapshot = None
+        
+        if inventory_id:
+            cursor.execute("SELECT product_name FROM inventory WHERE id = ?", (inventory_id,))
+            inventory_result = cursor.fetchone()
+            inventory_name_snapshot = inventory_result[0] if inventory_result else None
+            
+        if outer_fabric_id:
+            cursor.execute("SELECT name FROM fabrics WHERE id = ?", (outer_fabric_id,))
+            outer_fabric_result = cursor.fetchone()
+            outer_fabric_name_snapshot = outer_fabric_result[0] if outer_fabric_result else None
+            
+        if inner_fabric_id:
+            cursor.execute("SELECT name FROM fabrics WHERE id = ?", (inner_fabric_id,))
+            inner_fabric_result = cursor.fetchone()
+            inner_fabric_name_snapshot = inner_fabric_result[0] if inner_fabric_result else None
+        
         cursor.execute(
             """INSERT INTO order_items 
-               (order_id, item_type, inventory_id, outer_fabric_id, inner_fabric_id, quantity, unit_price, notes) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (order_id, item_type, inventory_id, outer_fabric_id, inner_fabric_id, quantity, unit_price, notes)
+               (order_id, item_type, inventory_id, outer_fabric_id, inner_fabric_id, quantity, unit_price, notes,
+                inventory_name_snapshot, outer_fabric_name_snapshot, inner_fabric_name_snapshot) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (order_id, item_type, inventory_id, outer_fabric_id, inner_fabric_id, quantity, unit_price, notes,
+             inventory_name_snapshot, outer_fabric_name_snapshot, inner_fabric_name_snapshot)
         )
         
         item_id = cursor.lastrowid
@@ -1687,18 +1811,23 @@ class DatabaseManager:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT o.*, c.nickname as customer_name, c.phone_suffix as customer_phone_suffix
+            SELECT o.id, o.customer_id, o.total_amount, o.status, o.notes, o.image_path, 
+                   o.created_at, o.updated_at, o.points_awarded, o.customer_name_snapshot,
+                   c.nickname as customer_name, c.phone_suffix as customer_phone_suffix
             FROM orders o
-            LEFT JOIN customers c ON o.customer_id = c.id
+            LEFT JOIN customers c ON o.customer_id = c.id AND (c.deleted = FALSE OR c.deleted IS NULL)
             ORDER BY o.created_at DESC
         """)
         
         orders = []
         for row in cursor.fetchall():
+            # 优先使用快照名称，如果没有快照则使用当前名称
+            customer_display_name = row[9] if row[9] else row[10]  # customer_name_snapshot 优先于 customer_name
             orders.append({
                 'id': row[0], 'customer_id': row[1], 'total_amount': row[2],
                 'status': row[3], 'notes': row[4], 'image_path': row[5], 'created_at': row[6], 'updated_at': row[7],
-                'customer_name': row[8], 'customer_phone_suffix': row[9]
+                'points_awarded': row[8], 'customer_name_snapshot': row[9],
+                'customer_name': customer_display_name, 'customer_phone_suffix': row[11]
             })
         conn.close()
         return orders
@@ -1777,7 +1906,9 @@ class DatabaseManager:
         # 获取分页数据
         offset = (page - 1) * page_size
         data_query = f"""
-            SELECT o.*, c.nickname as customer_name, c.phone_suffix as customer_phone_suffix
+            SELECT o.id, o.customer_id, o.total_amount, o.status, o.notes, o.image_path, 
+                   o.created_at, o.updated_at, o.points_awarded, o.customer_name_snapshot,
+                   c.nickname as customer_name, c.phone_suffix as customer_phone_suffix
             FROM orders o
             LEFT JOIN customers c ON o.customer_id = c.id
             {where_clause}
@@ -1788,10 +1919,13 @@ class DatabaseManager:
         
         orders = []
         for row in cursor.fetchall():
+            # 优先使用快照名称，如果没有快照则使用当前名称
+            customer_display_name = row[9] if row[9] else row[10]  # customer_name_snapshot 优先于 customer_name
             orders.append({
                 'id': row[0], 'customer_id': row[1], 'total_amount': row[2],
                 'status': row[3], 'notes': row[4], 'image_path': row[5], 'created_at': row[6], 'updated_at': row[7],
-                'customer_name': row[8], 'customer_phone_suffix': row[9]
+                'points_awarded': row[8], 'customer_name_snapshot': row[9],
+                'customer_name': customer_display_name, 'customer_phone_suffix': row[11]
             })
         
         conn.close()
@@ -1836,7 +1970,9 @@ class DatabaseManager:
         # 获取订单基本信息
         placeholders = ','.join(['?' for _ in order_ids])
         cursor.execute(f"""
-            SELECT o.*, c.nickname as customer_name
+            SELECT o.id, o.customer_id, o.total_amount, o.status, o.notes, o.image_path, 
+                   o.created_at, o.updated_at, o.points_awarded, o.customer_name_snapshot,
+                   c.nickname as customer_name
             FROM orders o
             LEFT JOIN customers c ON o.customer_id = c.id
             WHERE o.id IN ({placeholders})
@@ -1844,16 +1980,22 @@ class DatabaseManager:
         
         orders_dict = {}
         for row in cursor.fetchall():
+            # 优先使用快照名称，如果没有快照则使用当前名称
+            customer_display_name = row[9] if row[9] else row[10]  # customer_name_snapshot 优先于 customer_name
             orders_dict[row[0]] = {
                 'id': row[0], 'customer_id': row[1], 'total_amount': row[2],
                 'status': row[3], 'notes': row[4], 'image_path': row[5], 
-                'created_at': row[6], 'updated_at': row[7], 'customer_name': row[8],
+                'created_at': row[6], 'updated_at': row[7], 'points_awarded': row[8],
+                'customer_name_snapshot': row[9], 'customer_name': customer_display_name,
                 'items': []
             }
         
         # 获取所有订单的商品信息
         cursor.execute(f"""
-            SELECT oi.*, i.product_name as inventory_name,
+            SELECT oi.id, oi.order_id, oi.item_type, oi.inventory_id, oi.outer_fabric_id, oi.inner_fabric_id,
+                   oi.quantity, oi.unit_price, oi.notes, 
+                   oi.inventory_name_snapshot, oi.outer_fabric_name_snapshot, oi.inner_fabric_name_snapshot,
+                   i.product_name as inventory_name,
                    of.name as outer_fabric_name,
                    if.name as inner_fabric_name
             FROM order_items oi
@@ -1867,11 +2009,17 @@ class DatabaseManager:
         for row in cursor.fetchall():
             order_id = row[1]  # order_id is the second column
             if order_id in orders_dict:
+                # 优先使用快照名称，如果没有快照则使用当前名称
+                inventory_display_name = row[9] if row[9] else row[12]  # inventory_name_snapshot 优先于 inventory_name
+                outer_fabric_display_name = row[10] if row[10] else row[13]  # outer_fabric_name_snapshot 优先于 outer_fabric_name
+                inner_fabric_display_name = row[11] if row[11] else row[14]  # inner_fabric_name_snapshot 优先于 inner_fabric_name
+                
                 orders_dict[order_id]['items'].append({
                     'id': row[0], 'order_id': row[1], 'item_type': row[2],
-                    'inventory_id': row[3], 'quantity': row[4], 'unit_price': row[5],
-                    'notes': row[6], 'inventory_name': row[7],
-                    'outer_fabric_name': row[8], 'inner_fabric_name': row[9]
+                    'inventory_id': row[3], 'outer_fabric_id': row[4], 'inner_fabric_id': row[5],
+                    'quantity': row[6], 'unit_price': row[7], 'notes': row[8],
+                    'inventory_name_snapshot': row[9], 'outer_fabric_name_snapshot': row[10], 'inner_fabric_name_snapshot': row[11],
+                    'inventory_name': inventory_display_name, 'outer_fabric_name': outer_fabric_display_name, 'inner_fabric_name': inner_fabric_display_name
                 })
         
         conn.close()
@@ -1882,7 +2030,10 @@ class DatabaseManager:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT oi.*, i.product_name as inventory_name,
+            SELECT oi.id, oi.order_id, oi.item_type, oi.inventory_id, oi.outer_fabric_id, oi.inner_fabric_id,
+                   oi.quantity, oi.unit_price, oi.notes, 
+                   oi.inventory_name_snapshot, oi.outer_fabric_name_snapshot, oi.inner_fabric_name_snapshot,
+                   i.product_name as inventory_name,
                    of.name as outer_fabric_name,
                    if.name as inner_fabric_name
             FROM order_items oi
@@ -1894,39 +2045,31 @@ class DatabaseManager:
         
         items = []
         for row in cursor.fetchall():
+            # 优先使用快照名称，如果没有快照则使用当前名称
+            inventory_display_name = row[9] if row[9] else row[12]  # inventory_name_snapshot 优先于 inventory_name
+            outer_fabric_display_name = row[10] if row[10] else row[13]  # outer_fabric_name_snapshot 优先于 outer_fabric_name
+            inner_fabric_display_name = row[11] if row[11] else row[14]  # inner_fabric_name_snapshot 优先于 inner_fabric_name
+            
             items.append({
                 'id': row[0], 'order_id': row[1], 'item_type': row[2],
                 'inventory_id': row[3], 'outer_fabric_id': row[4], 'inner_fabric_id': row[5],
                 'quantity': row[6], 'unit_price': row[7], 'notes': row[8],
-                'inventory_name': row[9], 'outer_fabric_name': row[10], 'inner_fabric_name': row[11]
+                'inventory_name_snapshot': row[9], 'outer_fabric_name_snapshot': row[10], 'inner_fabric_name_snapshot': row[11],
+                'inventory_name': inventory_display_name, 'outer_fabric_name': outer_fabric_display_name, 'inner_fabric_name': inner_fabric_display_name
             })
         conn.close()
         return items
     
     def complete_order_payment(self, order_id: int):
-        """完成订单支付，更新客户积分"""
+        """完成订单支付"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
-        # 获取订单信息
-        cursor.execute("SELECT customer_id, total_amount FROM orders WHERE id=?", (order_id,))
-        order_info = cursor.fetchone()
-        
-        if order_info:
-            customer_id, total_amount = order_info
-            points_to_add = int(total_amount)  # 每1元增加1积分
-            
-            # 更新客户积分
-            cursor.execute(
-                "UPDATE customers SET points = points + ?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                (points_to_add, customer_id)
-            )
-            
-            # 更新订单状态
-            cursor.execute(
-                "UPDATE orders SET status='completed', updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                (order_id,)
-            )
+        # 更新订单状态为已完成
+        cursor.execute(
+            "UPDATE orders SET status='completed', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (order_id,)
+        )
         
         conn.commit()
         conn.close()

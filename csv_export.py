@@ -80,23 +80,34 @@ def export_orders_to_csv_optimized(orders_with_items: Dict[int, Dict]) -> str:
             # 计算需要的行数（取现货和定制商品的最大数量）
             max_rows = max(len(stock_items), len(custom_items), 1)
             
+            # 导入统一显示工具
+            from utils.display_utils import format_item_display, format_fabric_display
+            
             for j in range(max_rows):
                 # 现货商品信息
-                stock_name = stock_items[j].get('inventory_name', '') if j < len(stock_items) else ''
-                stock_quantity = stock_items[j].get('quantity', '') if j < len(stock_items) else ''
-                stock_price = safe_format_currency(stock_items[j].get('unit_price')) if j < len(stock_items) else ''
+                if j < len(stock_items):
+                    stock_name = format_item_display(stock_items[j], '现货')
+                    stock_quantity = stock_items[j].get('quantity', '')
+                    stock_price = safe_format_currency(stock_items[j].get('unit_price'))
+                else:
+                    stock_name = stock_quantity = stock_price = ''
                 
                 # 定制商品信息
                 if j < len(custom_items):
                     custom_item = custom_items[j]
-                    custom_name = custom_item.get('inventory_name', '')
+                    custom_name = format_item_display(custom_item, '定制')
+                    
                     # 如果有面料信息，添加到商品名称中
-                    if custom_item.get('outer_fabric_name') or custom_item.get('inner_fabric_name'):
-                        fabric_info = []
-                        if custom_item.get('outer_fabric_name'):
-                            fabric_info.append(f"表布:{custom_item['outer_fabric_name']}")
-                        if custom_item.get('inner_fabric_name'):
-                            fabric_info.append(f"里布:{custom_item['inner_fabric_name']}")
+                    fabric_info = []
+                    outer_fabric = format_fabric_display(custom_item, 'outer')
+                    inner_fabric = format_fabric_display(custom_item, 'inner')
+                    
+                    if outer_fabric:
+                        fabric_info.append(f"表布:{outer_fabric}")
+                    if inner_fabric:
+                        fabric_info.append(f"里布:{inner_fabric}")
+                    
+                    if fabric_info:
                         custom_name += f"({','.join(fabric_info)})"
                     
                     custom_quantity = custom_item.get('quantity', '')
@@ -196,21 +207,29 @@ def export_orders_to_csv(orders: List[Dict], order_items_dict: Dict[int, List[Di
             
             for j in range(max_rows):
                 # 现货商品信息
-                stock_name = stock_items[j].get('inventory_name', '') if j < len(stock_items) else ''
-                stock_quantity = stock_items[j].get('quantity', '') if j < len(stock_items) else ''
-                stock_price = safe_format_currency(stock_items[j].get('unit_price')) if j < len(stock_items) else ''
+                if j < len(stock_items):
+                    stock_name = format_item_display(stock_items[j], '现货')
+                    stock_quantity = stock_items[j].get('quantity', '')
+                    stock_price = safe_format_currency(stock_items[j].get('unit_price'))
+                else:
+                    stock_name = stock_quantity = stock_price = ''
                 
                 # 定制商品信息
                 if j < len(custom_items):
                     custom_item = custom_items[j]
-                    custom_name = custom_item.get('inventory_name', '')
+                    custom_name = format_item_display(custom_item, '定制')
+                    
                     # 如果有面料信息，添加到商品名称中
-                    if custom_item.get('outer_fabric_name') or custom_item.get('inner_fabric_name'):
-                        fabric_info = []
-                        if custom_item.get('outer_fabric_name'):
-                            fabric_info.append(f"表布:{custom_item['outer_fabric_name']}")
-                        if custom_item.get('inner_fabric_name'):
-                            fabric_info.append(f"里布:{custom_item['inner_fabric_name']}")
+                    fabric_info = []
+                    outer_fabric = format_fabric_display(custom_item, 'outer')
+                    inner_fabric = format_fabric_display(custom_item, 'inner')
+                    
+                    if outer_fabric:
+                        fabric_info.append(f"表布:{outer_fabric}")
+                    if inner_fabric:
+                        fabric_info.append(f"里布:{inner_fabric}")
+                    
+                    if fabric_info:
                         custom_name += f"({','.join(fabric_info)})"
                     
                     custom_quantity = custom_item.get('quantity', '')

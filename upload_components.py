@@ -81,7 +81,10 @@ def drag_drop_image_uploader(key, label="上传图片", help_text="支持拖拽�
     Returns:
         tuple: (uploaded_file, file_path)
     """
-    st.markdown(f"### {label}")
+    if form_safe:
+        st.markdown(f"**{label}**")
+    else:
+        st.markdown(f"### {label}")
     
     # 自定义CSS样式
     st.markdown("""

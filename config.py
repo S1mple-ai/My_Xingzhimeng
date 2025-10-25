@@ -30,7 +30,7 @@ class DatabaseConfig:
 @dataclass
 class UIConfig:
     """UI界面配置"""
-    page_title: str = "星之梦服装定制管理系统"
+    page_title: str = "星之梦手工定制管理系统"
     page_icon: str = "👗"
     layout: str = "wide"
     initial_sidebar_state: str = "expanded"

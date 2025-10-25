@@ -6,6 +6,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def clear_processing_cache():
+    """清理加工管理相关的缓存"""
+    try:
+        # 清理Streamlit的缓存
+        st.cache_data.clear()
+        logger.info("加工管理缓存清理完成")
+    except Exception as e:
+        logger.error(f"加工管理缓存清理失败: {str(e)}")
+
 def show_processing_management():
     """代加工管理主页面"""
     st.title("🏭 加工管理")
@@ -111,7 +120,9 @@ def show_processor_management(db):
                     
                     if st.button("删除", key=f"delete_processor_{processor['id']}", type="secondary"):
                         try:
-                            db.delete_processor(processor['id'])
+                            db.delete_processor(processor['id'], force_delete=True)
+                            # 删除成功后清理缓存
+                            clear_processing_cache()
                             st.success(f"成功删除代加工人员：{processor['nickname']}")
                             st.rerun()
                         except Exception as e:
@@ -305,9 +316,13 @@ def show_processing_order_management(db):
                 
                 with col1:
                     st.write(f"**{order['product_name']}** (数量: {order['product_quantity']})")
-                    st.write(f"👤 {order['processor_name']}")
-                    if order['fabric_name']:
-                        st.write(f"🧵 {order['fabric_name']}")
+                    # 使用安全的字段访问
+                    from utils.display_utils import format_processor_display, safe_get
+                    processor_name = format_processor_display(order)
+                    st.write(f"👤 {processor_name}")
+                    fabric_name = safe_get(order, 'fabric_name', '未指定面料')
+                    if fabric_name != '未指定面料':
+                        st.write(f"🧵 {fabric_name}")
                 
                 with col2:
                     st.write(f"📏 表布: {order['fabric_meters_main']}m")
@@ -335,6 +350,8 @@ def show_processing_order_management(db):
                     if st.button("删除", key=f"delete_order_{order['id']}", type="secondary"):
                         try:
                             db.delete_processing_order(order['id'])
+                            # 删除成功后清理缓存
+                            clear_processing_cache()
                             st.success(f"成功删除订单：{order['product_name']}")
                             st.rerun()
                         except Exception as e:

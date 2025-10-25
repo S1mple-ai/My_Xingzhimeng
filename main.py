@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import os
 from datetime import datetime
 from database import DatabaseManager
 from streamlit_option_menu import option_menu
@@ -25,13 +26,76 @@ from cache_manager import cache_manager, smart_cache, CacheMetrics
 # 导入代加工管理模块
 from processing_management import show_processing_management
 
+# 导入日志模块
+from utils.logger import SystemLogger, log_exceptions, log_performance, log_database_operation
+from utils.exception_handler import GlobalExceptionHandler, setup_global_exception_handling
+
 # 页面配置
 st.set_page_config(**config.get_page_config())
 
+# 初始化日志系统
+logger = SystemLogger()
+
+# 初始化全局异常处理
+setup_global_exception_handling()
+
+# 缓存清理函数
+def clear_data_cache():
+    """清理数据相关的缓存"""
+    try:
+        # 清理Streamlit的缓存
+        st.cache_data.clear()
+        
+        # 清理数据库连接缓存（强制重新初始化）
+        init_database.clear()
+        init_services.clear()
+        
+        logger.info("缓存清理完成")
+    except Exception as e:
+        logger.error(f"缓存清理失败: {str(e)}")
+
+def safe_delete_with_cache_clear(delete_func, *args, **kwargs):
+    """通用的删除操作包装函数，确保删除后清理缓存并刷新页面"""
+    try:
+        result = delete_func(*args, **kwargs)
+        if result:
+            # 删除成功后清理缓存
+            clear_data_cache()
+            # 强制页面刷新
+            st.rerun()
+        return result
+    except Exception as e:
+        logger.error(f"删除操作失败: {str(e)}")
+        raise e
+
 # 初始化数据库和服务层
 @st.cache_resource
+@log_exceptions()
 def init_database():
-    return DatabaseManager()
+    logger.info("正在初始化数据库连接...")
+    db = DatabaseManager()
+    logger.info("数据库初始化完成")
+    return db
+
+@log_exceptions()
+@log_database_operation("delete", "customers")
+def safe_delete_customer(customer_id: int) -> bool:
+    """安全删除客户的包装函数"""
+    try:
+        logger.info(f"开始删除客户，ID: {customer_id}")
+        # 使用缓存的数据库连接，确保数据一致性
+        db = init_database()
+        db.delete_customer(customer_id, True)
+        
+        # 删除成功后清理相关缓存
+        clear_data_cache()
+        
+        logger.info(f"成功删除客户，ID: {customer_id}")
+        return True
+    except Exception as e:
+        logger.error(f"删除客户失败，ID: {customer_id}, 错误: {str(e)}")
+        st.error(f"删除客户失败: {str(e)}")
+        return False
 
 @st.cache_resource
 def init_services():
@@ -194,10 +258,11 @@ if st.session_state.get('show_edit_fabric', False):
                     st.markdown("*当前无图片*")
                 
                 # 上传新图片
-                uploaded_file = drag_drop_image_uploader(
+                uploaded_file, new_image_path = drag_drop_image_uploader(
                     key=f"fabric_edit_image_{fabric_data.get('id', 'unknown')}",
                     label="拖拽新图片到此处或点击上传（可选）",
-                    help_text="支持 JPG, PNG, GIF 格式"
+                    help_text="支持 JPG, PNG, GIF 格式",
+                    form_safe=True
                 )
                 
                 # 显示新上传的图片预览
@@ -209,10 +274,8 @@ if st.session_state.get('show_edit_fabric', False):
                 with col1:
                     if st.form_submit_button("💾 保存修改", type="primary"):
                         try:
-                            # 处理图片上传
-                            final_image_path = fabric_data.get('image_path', '')
-                            if uploaded_file:
-                                final_image_path = save_uploaded_file(uploaded_file, "fabric")
+                            # 使用已经处理好的图片路径
+                            final_image_path = new_image_path if new_image_path else fabric_data.get('image_path', '')
                             
                             success = db.update_fabric(
                                 fabric_data['id'],
@@ -281,10 +344,11 @@ if st.session_state.get('show_edit_inventory', False):
                     
                     # 图片更换 - 支持拖拽上传
                     st.markdown("**🖼️ 更换图片**")
-                    uploaded_file = drag_drop_image_uploader(
+                    uploaded_file, new_image_path = drag_drop_image_uploader(
                         key=f"edit_inventory_image_{inventory_data.get('id', 0)}",
                         label="拖拽新图片到此处或点击上传",
-                        help_text="支持 JPG, PNG, GIF 格式，留空则保持原图片"
+                        help_text="支持 JPG, PNG, GIF 格式，留空则保持原图片",
+                        form_safe=True
                     )
                     
                     # 显示新上传的图片预览
@@ -301,11 +365,8 @@ if st.session_state.get('show_edit_inventory', False):
                 with col1:
                     if st.form_submit_button("💾 保存修改", type="primary"):
                         try:
-                            # 处理图片更新
-                            final_image_path = inventory_data.get('image_path', '')
-                            if uploaded_file:
-                                # 保存新图片
-                                final_image_path = save_uploaded_file(uploaded_file, "inventory")
+                            # 使用已经处理好的图片路径
+                            final_image_path = new_image_path if new_image_path else inventory_data.get('image_path', '')
                             
                             success = db.update_inventory_item(
                                 inventory_data['id'],
@@ -902,16 +963,14 @@ elif selected == "👥 客户管理":
                             col1, col2 = st.columns(2)
                             with col1:
                                 if st.button("✅ 确认删除", key=f"confirm_{customer['id']}", type="primary"):
-                                    try:
-                                        db.delete_customer(customer['id'])
+                                    if safe_delete_customer(customer['id']):
                                         show_success_message("客户已删除")
                                         # 清理状态
                                         st.session_state[delete_key] = False
                                         if confirm_key in st.session_state:
                                             del st.session_state[confirm_key]
                                         st.rerun()
-                                    except Exception as e:
-                                        show_error_message(f"删除客户失败: {str(e)}")
+                                    else:
                                         st.session_state[delete_key] = False
                             with col2:
                                 if st.button("❌ 取消", key=f"cancel_{customer['id']}"):
@@ -1033,11 +1092,13 @@ elif selected == "🧵 面料管理":
                 def on_fabric_delete(fabric_data):
                     """删除面料的回调函数"""
                     try:
-                        if db.delete_fabric(fabric_data['id']):
-                            st.success("面料删除成功！")
-                            st.rerun()
-                        else:
-                            st.error("删除失败！")
+                        # 使用缓存的数据库连接
+                        db = init_database()
+                        db.delete_fabric(fabric_data['id'], force_delete=True)
+                        # 删除成功后清理缓存
+                        clear_data_cache()
+                        st.success("面料删除成功！")
+                        st.rerun()
                     except Exception as e:
                         st.error(f"删除失败: {str(e)}")
                 
@@ -1066,7 +1127,7 @@ elif selected == "🧵 面料管理":
             # 图片上传区域
             st.markdown("---")
             st.markdown("**🖼️ 面料图片**")
-            uploaded_file, _ = drag_drop_image_uploader(
+            uploaded_file, image_path = drag_drop_image_uploader(
                 key="fabric_image_upload",
                 label="拖拽图片到此处或点击上传",
                 help_text="支持 JPG, PNG, GIF 格式",
@@ -1078,12 +1139,10 @@ elif selected == "🧵 面料管理":
             if submitted:
                 if name:
                     try:
-                        # 处理图片上传
-                        image_path = ""
-                        if uploaded_file:
-                            image_path = save_uploaded_file(uploaded_file, "fabric")
+                        # 使用已经处理好的图片路径
+                        final_image_path = image_path if image_path else ""
                         
-                        fabric_id = db.add_fabric(name, material_type, usage_type, image_path)
+                        fabric_id = db.add_fabric(name, material_type, usage_type, final_image_path)
                         st.markdown(f'<div class="success-message">✅ 面料 "{name}" 添加成功！面料ID: {fabric_id}</div>', unsafe_allow_html=True)
                         st.rerun()
                     except Exception as e:
@@ -1207,11 +1266,16 @@ elif selected == "📦 库存管理":
                 def on_inventory_delete(inventory_data):
                     """删除库存商品的回调函数"""
                     try:
-                        if db.delete_inventory_item(inventory_data['id']):
-                            st.success("商品删除成功！")
+                        # 使用缓存的数据库连接
+                        db = init_database()
+                        # 使用强制删除，允许删除有关联订单的商品
+                        if db.delete_inventory_item(inventory_data['id'], force_delete=True):
+                            # 删除成功后清理缓存
+                            clear_data_cache()
+                            st.success(f"商品 '{inventory_data['name']}' 删除成功！")
                             st.rerun()
                         else:
-                            st.error("删除失败！")
+                            st.error("删除失败！商品不存在或数据库错误。")
                     except Exception as e:
                         st.error(f"删除失败: {str(e)}")
                 
@@ -1234,10 +1298,11 @@ elif selected == "📦 库存管理":
                 
                 # 图片上传 - 支持拖拽上传
                 st.markdown("**🖼️ 商品图片**")
-                uploaded_file = drag_drop_image_uploader(
+                uploaded_file, image_path = drag_drop_image_uploader(
                     key="inventory_image_upload",
                     label="拖拽图片到此处或点击上传",
-                    help_text="支持 JPG, PNG, GIF 格式"
+                    help_text="支持 JPG, PNG, GIF 格式",
+                    form_safe=True
                 )
                 
                 # 显示上传的图片预览
@@ -1252,12 +1317,10 @@ elif selected == "📦 库存管理":
             
             if submitted:
                 if product_name:
-                    # 处理图片上传
-                    image_path = ""
-                    if uploaded_file:
-                        image_path = save_uploaded_file(uploaded_file, "inventory")
+                    # 使用已经处理好的图片路径
+                    final_image_path = image_path if image_path else ""
                     
-                    item_id = db.add_inventory_item(product_name, description, price, quantity, image_path)
+                    item_id = db.add_inventory_item(product_name, description, price, quantity, final_image_path)
                     st.markdown(f'<div class="success-message">✅ 商品 "{product_name}" 添加成功！</div>', unsafe_allow_html=True)
                     st.rerun()
                 else:
@@ -1490,17 +1553,16 @@ elif selected == "📋 订单管理":
                         # 确认删除
                         if st.session_state.get('confirm_batch_delete', False):
                             try:
+                                # 使用缓存的数据库连接
+                                db = init_database()
                                 deleted_count, failed_ids = db.delete_orders_batch(list(st.session_state.selected_orders))
                                 
                                 if deleted_count > 0:
+                                    # 删除成功后清理缓存
+                                    clear_data_cache()
                                     st.success(f"✅ 成功删除 {deleted_count} 个订单")
                                     st.session_state.selected_orders = set()
                                     st.session_state.confirm_batch_delete = False
-                                    # 清理缓存
-                                    if 'order_cache_key' in st.session_state:
-                                        del st.session_state.order_cache_key
-                                    if 'order_cache_data' in st.session_state:
-                                        del st.session_state.order_cache_data
                                     st.rerun()
                                 
                                 if failed_ids:
@@ -1541,7 +1603,10 @@ elif selected == "📋 订单管理":
                         
                         with col1:
                             st.markdown(f"**{status_icon} 订单 #{order['id']}**")
-                            st.write(f"客户: {order['customer_name']}")
+                            # 使用安全的客户名称显示
+                            from utils.display_utils import format_customer_display
+                            customer_display = format_customer_display(order)
+                            st.write(f"客户: {customer_display}")
                         
                         with col2:
                             st.write(f"金额: ¥{order['total_amount']:.2f}")
@@ -1581,14 +1646,13 @@ elif selected == "📋 订单管理":
                             with btn_col4:
                                 if order['status'] != 'completed':
                                     if st.button("🗑️", key=f"delete_{order['id']}", help="删除", type="secondary"):
+                                        # 使用缓存的数据库连接
+                                        db = init_database()
                                         success = db.delete_order(order['id'])
                                         if success:
+                                            # 删除成功后清理缓存
+                                            clear_data_cache()
                                             st.success("✅ 订单已删除")
-                                            # 清理缓存
-                                            if 'order_cache_key' in st.session_state:
-                                                del st.session_state.order_cache_key
-                                            if 'order_cache_data' in st.session_state:
-                                                del st.session_state.order_cache_data
                                             st.rerun()
                                         else:
                                             st.error("❌ 删除失败")
@@ -1601,7 +1665,9 @@ elif selected == "📋 订单管理":
                             
                             with detail_col1:
                                 st.markdown("**订单详情:**")
-                                st.write(f"客户: {order['customer_name']}")
+                                # 使用安全的客户名称显示
+                                customer_display = format_customer_display(order)
+                                st.write(f"客户: {customer_display}")
                                 st.write(f"总金额: ¥{order['total_amount']:.2f}")
                                 st.write(f"状态: {order['status']}")
                                 st.write(f"创建时间: {order['created_at']}")
@@ -1611,24 +1677,20 @@ elif selected == "📋 订单管理":
                                 # 显示订单图片
                                 if order.get('image_path'):
                                     st.markdown("**订单图片:**")
-                                    display_uploaded_media(order['image_path'])
+                                    display_uploaded_media(image_path=order['image_path'])
                             
                             # 显示订单商品详情
                             st.markdown("**订单商品:**")
                             order_items = db.get_order_items(order['id'])
                             
                             if order_items:
+                                # 导入统一显示工具
+                                from utils.display_utils import format_order_item_line
+                                
                                 for item in order_items:
-                                    if item['item_type'] == '现货':
-                                        st.write(f"• 现货: {item['inventory_name']} × {item['quantity']} = ¥{item['unit_price'] * item['quantity']:.2f}")
-                                    else:  # 定制商品
-                                        st.write(f"• 定制: {item['inventory_name']} × {item['quantity']} = ¥{item['unit_price'] * item['quantity']:.2f}")
-                                        if item.get('outer_fabric_name'):
-                                            st.write(f"  表布: {item['outer_fabric_name']}")
-                                        if item.get('inner_fabric_name'):
-                                            st.write(f"  里布: {item['inner_fabric_name']}")
-                                    if item['notes']:
-                                        st.write(f"  备注: {item['notes']}")
+                                    # 使用统一的格式化函数
+                                    item_display = format_order_item_line(item)
+                                    st.markdown(item_display)
                             
                             # 积分操作区域
                             st.markdown("---")
@@ -1679,7 +1741,10 @@ elif selected == "📋 订单管理":
                                                             (order['id'],)
                                                         )
                                                         
-                                                        st.success(f"✅ 成功给客户 {order['customer_name']} 加了 {points_to_award} 积分！")
+                                                        # 使用安全的客户名称显示
+                                                        from utils.display_utils import format_customer_display
+                                                        customer_display = format_customer_display(order)
+                                                        st.success(f"✅ 成功给客户 {customer_display} 加了 {points_to_award} 积分！")
                                                         
                                                         # 清理缓存
                                                         if 'order_cache_key' in st.session_state:
@@ -1903,7 +1968,11 @@ elif selected == "📋 订单管理":
                             st.write(f"• 现货: {item['name']} × {item['quantity']} = ¥{item['total_price']:.2f}")
                         else:  # 定制商品
                             st.write(f"• 定制: {item['name']} × {item['quantity']} = ¥{item['total_price']:.2f}")
-                            st.write(f"  表布: {item['outer_fabric_name']}, 里布: {item['inner_fabric_name']}")
+                            # 使用安全的面料名称显示
+                            from utils.display_utils import format_fabric_display
+                            outer_fabric = format_fabric_display(item, 'outer') or '未指定'
+                            inner_fabric = format_fabric_display(item, 'inner') or '未指定'
+                            st.write(f"  表布: {outer_fabric}, 里布: {inner_fabric}")
                             if item.get('notes'):
                                 st.write(f"  备注: {item['notes']}")
                     
@@ -1995,7 +2064,10 @@ elif selected == "📋 订单管理":
                     # 计算建议积分（等于订单金额）
                     suggested_points = max(1, int(order_info['total_amount']))
                     
-                    st.info(f"💡 为客户 **{order_info['customer_name']}** 奖励积分？")
+                    # 使用安全的客户名称显示
+                    from utils.display_utils import format_customer_display
+                    customer_display = format_customer_display(order_info)
+                    st.info(f"💡 为客户 **{customer_display}** 奖励积分？")
                     st.write(f"📊 订单金额: ¥{order_info['total_amount']:.2f}")
                     st.write(f"⭐ 建议积分: {suggested_points} 分（等于订单金额）")
                     
@@ -2028,7 +2100,9 @@ elif selected == "📋 订单管理":
                                         # 标记订单已加积分
                                         db.update_order(order_info['id'], points_awarded=True)
                                         
-                                        st.success(f"✅ 成功为客户 {order_info['customer_name']} 奖励 {points_to_award} 积分！")
+                                        # 使用安全的客户名称显示
+                                        customer_display = format_customer_display(order_info)
+                                        st.success(f"✅ 成功为客户 {customer_display} 奖励 {points_to_award} 积分！")
                                         
                                         # 清理session_state
                                         del st.session_state.newly_created_order
@@ -2069,7 +2143,7 @@ elif selected == "⚙️ 系统设置":
     st.markdown("## ⚙️ 系统设置")
     
     # 创建选项卡
-    tab1, tab2, tab3 = st.tabs(["🗄️ 自动备份", "📊 系统信息", "🔧 高级设置"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🗄️ 自动备份", "📊 系统信息", "🔧 高级设置", "📋 日志管理"])
     
     with tab1:
         st.markdown("### 🗄️ 自动备份管理")
@@ -2217,6 +2291,193 @@ elif selected == "⚙️ 系统设置":
         st.markdown("#### 📋 系统版本信息")
         st.info("星之梦手作管理系统 v1.0.0")
         st.info("最后更新：2025-10-17")
+    
+    with tab4:
+        st.markdown("### 📋 日志管理")
+        
+        # 导入日志模块
+        import os
+        import glob
+        from datetime import datetime, timedelta
+        
+        # 日志文件目录
+        log_dir = "logs"
+        
+        # 创建日志目录（如果不存在）
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        
+        # 日志统计信息
+        st.markdown("#### 📊 日志统计")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        # 获取日志文件列表
+        log_files = glob.glob(os.path.join(log_dir, "*.log"))
+        
+        with col1:
+            st.metric("📁 日志文件数", len(log_files))
+        
+        with col2:
+            # 计算总日志大小
+            total_size = sum(os.path.getsize(f) for f in log_files if os.path.exists(f))
+            st.metric("💾 总大小", f"{total_size / 1024:.1f} KB")
+        
+        with col3:
+            # 今日错误数量（从error.log中统计）
+            error_count = 0
+            error_log_path = os.path.join(log_dir, "error.log")
+            if os.path.exists(error_log_path):
+                try:
+                    with open(error_log_path, 'r', encoding='utf-8') as f:
+                        today = datetime.now().strftime("%Y-%m-%d")
+                        error_count = sum(1 for line in f if today in line and "ERROR" in line)
+                except:
+                    error_count = 0
+            st.metric("❌ 今日错误", error_count)
+        
+        with col4:
+            # 最新日志时间
+            latest_time = "无"
+            if log_files:
+                latest_file = max(log_files, key=os.path.getmtime)
+                latest_time = datetime.fromtimestamp(os.path.getmtime(latest_file)).strftime("%H:%M:%S")
+            st.metric("🕐 最新日志", latest_time)
+        
+        st.markdown("---")
+        
+        # 日志查看器
+        st.markdown("#### 📖 日志查看器")
+        
+        # 日志类型选择
+        log_types = ["app.log", "error.log", "debug.log", "performance.log", "database.log"]
+        selected_log_type = st.selectbox("选择日志类型", log_types, key="log_type_selector")
+        
+        # 日志级别过滤
+        log_levels = ["全部", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        selected_level = st.selectbox("日志级别", log_levels, key="log_level_filter")
+        
+        # 搜索功能
+        search_term = st.text_input("🔍 搜索关键词", placeholder="输入要搜索的内容...", key="log_search")
+        
+        # 显示行数控制
+        max_lines = st.slider("显示行数", 10, 1000, 100, key="log_max_lines")
+        
+        # 操作按钮
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("🔄 刷新日志", use_container_width=True):
+                st.rerun()
+        
+        with col2:
+            if st.button("📥 下载日志", use_container_width=True):
+                log_file_path = os.path.join(log_dir, selected_log_type)
+                if os.path.exists(log_file_path):
+                    with open(log_file_path, 'r', encoding='utf-8') as f:
+                        log_content = f.read()
+                    st.download_button(
+                        label="💾 下载文件",
+                        data=log_content,
+                        file_name=f"{selected_log_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+                        mime="text/plain"
+                    )
+                else:
+                    st.warning("日志文件不存在")
+        
+        with col3:
+            if st.button("🗑️ 清理日志", use_container_width=True):
+                if st.session_state.get('confirm_clear_logs', False):
+                    # 执行清理
+                    try:
+                        for log_file in log_files:
+                            if os.path.exists(log_file):
+                                os.remove(log_file)
+                        st.success("✅ 日志文件已清理")
+                        st.session_state['confirm_clear_logs'] = False
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ 清理失败: {str(e)}")
+                else:
+                    st.session_state['confirm_clear_logs'] = True
+                    st.warning("⚠️ 再次点击确认清理所有日志文件")
+        
+        # 显示日志内容
+        st.markdown("#### 📄 日志内容")
+        
+        log_file_path = os.path.join(log_dir, selected_log_type)
+        
+        if os.path.exists(log_file_path):
+            try:
+                with open(log_file_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                
+                # 反转行顺序，显示最新的日志
+                lines = lines[::-1]
+                
+                # 应用过滤器
+                filtered_lines = []
+                for line in lines:
+                    # 级别过滤
+                    if selected_level != "全部" and selected_level not in line:
+                        continue
+                    
+                    # 搜索过滤
+                    if search_term and search_term.lower() not in line.lower():
+                        continue
+                    
+                    filtered_lines.append(line)
+                    
+                    # 限制显示行数
+                    if len(filtered_lines) >= max_lines:
+                        break
+                
+                if filtered_lines:
+                    # 使用代码块显示日志，保持格式
+                    log_content = ''.join(filtered_lines)
+                    st.code(log_content, language="text")
+                    
+                    # 显示统计信息
+                    st.info(f"📊 显示 {len(filtered_lines)} 行日志（共 {len(lines)} 行）")
+                else:
+                    st.warning("🔍 没有找到匹配的日志记录")
+                    
+            except Exception as e:
+                st.error(f"❌ 读取日志文件失败: {str(e)}")
+        else:
+            st.info(f"📝 日志文件 {selected_log_type} 尚未创建")
+            st.markdown("当系统开始记录日志后，这里将显示相关内容。")
+        
+        # 实时日志监控
+        st.markdown("---")
+        st.markdown("#### 🔴 实时监控")
+        
+        if st.checkbox("启用实时日志监控", key="real_time_monitor"):
+            # 创建一个占位符用于实时更新
+            log_placeholder = st.empty()
+            
+            # 监控最新的错误日志
+            error_log_path = os.path.join(log_dir, "error.log")
+            if os.path.exists(error_log_path):
+                try:
+                    with open(error_log_path, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                    
+                    # 显示最新的5条错误日志
+                    recent_errors = lines[-5:] if lines else []
+                    if recent_errors:
+                        with log_placeholder.container():
+                            st.markdown("**最新错误日志：**")
+                            for line in recent_errors:
+                                if "ERROR" in line or "CRITICAL" in line:
+                                    st.error(line.strip())
+                                elif "WARNING" in line:
+                                    st.warning(line.strip())
+                    else:
+                        log_placeholder.info("✅ 暂无错误日志")
+                except:
+                    log_placeholder.error("❌ 无法读取实时日志")
+            else:
+                log_placeholder.info("📝 错误日志文件尚未创建")
 
 # 页脚
 st.markdown("---")

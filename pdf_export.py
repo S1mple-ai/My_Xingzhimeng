@@ -170,9 +170,12 @@ def create_order_pdf(orders: List[Dict], order_items_dict: Dict) -> bytes:
                 spot_title = Paragraph("现货商品:", small_style)
                 story.append(spot_title)
                 
+                # 导入统一显示工具
+                from utils.display_utils import format_item_display
+                
                 for item in spot_items:
                     item_data = [
-                        ['商品:', item.get('inventory_name', '未知商品')],
+                        ['商品:', format_item_display(item, '现货')],
                         ['数量:', str(item.get('quantity', 0))],
                         ['单价:', f"¥{safe_format_currency(item.get('unit_price'))}"],
                         ['小计:', f"¥{safe_format_currency(safe_multiply(item.get('unit_price'), item.get('quantity')))}"]
@@ -199,13 +202,19 @@ def create_order_pdf(orders: List[Dict], order_items_dict: Dict) -> bytes:
                 custom_title = Paragraph("定制商品:", small_style)
                 story.append(custom_title)
                 
+                # 导入面料显示工具
+                from utils.display_utils import format_fabric_display
+                
                 for item in custom_items:
+                    outer_fabric = format_fabric_display(item, 'outer') or '无'
+                    inner_fabric = format_fabric_display(item, 'inner') or '无'
+                    
                     item_data = [
-                        ['商品:', item.get('inventory_name', '定制商品')],
+                        ['商品:', format_item_display(item, '定制')],
                         ['数量:', str(item.get('quantity', 0))],
                         ['单价:', f"¥{safe_format_currency(item.get('unit_price'))}"],
-                        ['表布:', item.get('outer_fabric_name', '无')],
-                        ['里布:', item.get('inner_fabric_name', '无')],
+                        ['表布:', outer_fabric],
+                        ['里布:', inner_fabric],
                         ['备注:', item.get('notes', '无') or '无'],
                         ['小计:', f"¥{safe_format_currency(safe_multiply(item.get('unit_price'), item.get('quantity')))}"]
                     ]

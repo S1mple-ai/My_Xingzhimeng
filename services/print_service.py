@@ -196,8 +196,10 @@ class PrintService:
         customer_style.fontName = self.chinese_font
         customer_style.fontSize = 9
         
-        customer_name = customer['nickname'] if customer else '未知客户'
-        customer_phone = customer['phone_suffix'] if customer else '无'
+        # 使用安全的客户信息显示
+        from utils.display_utils import safe_get
+        customer_name = safe_get(customer, 'nickname', '未知客户') if customer else '未知客户'
+        customer_phone = safe_get(customer, 'phone_suffix', '无') if customer else '无'
         
         content.append(Paragraph(f"客户：{customer_name}", customer_style))
         content.append(Paragraph(f"手机尾号：{customer_phone}", customer_style))
@@ -213,12 +215,15 @@ class PrintService:
         content.append(Paragraph(f"日期：{order_date}", order_style))
         content.append(Spacer(1, 3 * mm))
         
+        # 导入统一显示工具
+        from utils.display_utils import format_item_display, format_fabric_display
+        
         # 现货商品
         if inventory_items:
             content.append(Paragraph("现货商品：", order_style))
             
             for item in inventory_items:
-                item_name = item['inventory_name'] or '未知商品'
+                item_name = format_item_display(item, "现货")
                 quantity = item['quantity']
                 unit_price = item['unit_price']
                 subtotal = quantity * unit_price
@@ -233,7 +238,7 @@ class PrintService:
             content.append(Paragraph("定制商品：", order_style))
             
             for item in custom_items:
-                item_name = item['inventory_name'] or '定制商品'
+                item_name = format_item_display(item, "定制")
                 quantity = item['quantity']
                 unit_price = item['unit_price']
                 subtotal = quantity * unit_price
@@ -242,10 +247,13 @@ class PrintService:
                 content.append(Paragraph(item_text, order_style))
                 
                 # 面料信息
-                if item.get('outer_fabric_name'):
-                    content.append(Paragraph(f"  表布：{item['outer_fabric_name']}", order_style))
-                if item.get('inner_fabric_name'):
-                    content.append(Paragraph(f"  里布：{item['inner_fabric_name']}", order_style))
+                outer_fabric = format_fabric_display(item, 'outer')
+                if outer_fabric:
+                    content.append(Paragraph(f"  表布：{outer_fabric}", order_style))
+                    
+                inner_fabric = format_fabric_display(item, 'inner')
+                if inner_fabric:
+                    content.append(Paragraph(f"  里布：{inner_fabric}", order_style))
                 
                 # 定制备注
                 if item.get('notes'):
