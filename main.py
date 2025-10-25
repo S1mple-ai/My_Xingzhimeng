@@ -30,6 +30,12 @@ from processing_management import show_processing_management
 from utils.logger import SystemLogger, log_exceptions, log_performance, log_database_operation
 from utils.exception_handler import GlobalExceptionHandler, setup_global_exception_handling
 
+# 导入状态管理器
+from utils.state_manager import (
+    state_manager, auto_refresh, smart_cache, crud_operation, 
+    refresh_page, refresh_module, clear_module_cache, init_state_manager
+)
+
 # 页面配置
 st.set_page_config(**config.get_page_config())
 
@@ -38,6 +44,9 @@ logger = SystemLogger()
 
 # 初始化全局异常处理
 setup_global_exception_handling()
+
+# 初始化状态管理器
+init_state_manager()
 
 # 缓存清理函数
 def clear_data_cache():
@@ -273,7 +282,13 @@ if st.session_state.get('show_edit_fabric', False):
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     if st.form_submit_button("💾 保存修改", type="primary"):
-                        try:
+                        @crud_operation(
+                            operation_type="update",
+                            module="fabrics",
+                            success_message="面料更新成功！",
+                            error_message="更新失败"
+                        )
+                        def update_fabric_operation():
                             # 使用已经处理好的图片路径
                             final_image_path = new_image_path if new_image_path else fabric_data.get('image_path', '')
                             
@@ -285,13 +300,10 @@ if st.session_state.get('show_edit_fabric', False):
                                 final_image_path
                             )
                             if success:
-                                st.markdown('<div class="success-message">✅ 面料更新成功！</div>', unsafe_allow_html=True)
                                 st.session_state.show_edit_fabric = False
-                                st.rerun()
-                            else:
-                                st.markdown('<div class="error-message">❌ 更新失败！</div>', unsafe_allow_html=True)
-                        except Exception as e:
-                            st.markdown(f'<div class="error-message">❌ 更新失败: {str(e)}</div>', unsafe_allow_html=True)
+                            return success
+                        
+                        update_fabric_operation()
                 with col2:
                     if st.form_submit_button("❌ 取消"):
                         st.session_state.show_edit_fabric = False
@@ -364,7 +376,13 @@ if st.session_state.get('show_edit_inventory', False):
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     if st.form_submit_button("💾 保存修改", type="primary"):
-                        try:
+                        @crud_operation(
+                            operation_type="update",
+                            module="inventory",
+                            success_message="库存更新成功！",
+                            error_message="更新失败"
+                        )
+                        def update_inventory_operation():
                             # 使用已经处理好的图片路径
                             final_image_path = new_image_path if new_image_path else inventory_data.get('image_path', '')
                             
@@ -377,13 +395,10 @@ if st.session_state.get('show_edit_inventory', False):
                                 final_image_path
                             )
                             if success:
-                                st.success("库存更新成功！")
                                 st.session_state.show_edit_inventory = False
-                                st.rerun()
-                            else:
-                                st.error("更新失败！")
-                        except Exception as e:
-                            st.error(f"更新失败: {str(e)}")
+                            return success
+                        
+                        update_inventory_operation()
                 with col2:
                     if st.form_submit_button("❌ 取消"):
                         st.session_state.show_edit_inventory = False
@@ -918,7 +933,13 @@ elif selected == "👥 客户管理":
                     
                     with col3:
                         if create_action_button("💾 更新", f"update_{customer['id']}", "primary"):
-                            try:
+                            @crud_operation(
+                                operation_type="update",
+                                module="customers",
+                                success_message="客户信息已更新",
+                                error_message="更新客户信息失败"
+                            )
+                            def update_customer_operation():
                                 # 更新基本信息
                                 db.update_customer(customer['id'], new_nickname, new_phone, new_notes)
                                 
@@ -935,18 +956,10 @@ elif selected == "👥 客户管理":
                                                 reason=f"手动调整: {points_formula}",
                                                 operator="管理员"
                                             )
-                                            show_success_message(f"客户信息已更新，积分从 {customer['points']} 变更为 {new_points}")
-                                        else:
-                                            show_success_message("客户信息已更新")
-                                    else:
-                                        show_error_message(f"积分公式错误: {error_msg}")
-                                        continue
-                                else:
-                                    show_success_message("客户信息已更新")
-                                
-                                st.rerun()
-                            except Exception as e:
-                                show_error_message(f"更新客户信息失败: {str(e)}")
+                                            return f"客户信息已更新，积分从 {customer['points']} 变更为 {new_points}"
+                                return True
+                            
+                            update_customer_operation()
                         
                         # 删除客户功能
                         delete_key = f"delete_customer_{customer['id']}"
@@ -963,14 +976,22 @@ elif selected == "👥 客户管理":
                             col1, col2 = st.columns(2)
                             with col1:
                                 if st.button("✅ 确认删除", key=f"confirm_{customer['id']}", type="primary"):
-                                    if safe_delete_customer(customer['id']):
-                                        show_success_message("客户已删除")
-                                        # 清理状态
-                                        st.session_state[delete_key] = False
-                                        if confirm_key in st.session_state:
-                                            del st.session_state[confirm_key]
-                                        st.rerun()
-                                    else:
+                                    @crud_operation(
+                                        operation_type="delete",
+                                        module="customers",
+                                        success_message="客户已删除",
+                                        error_message="删除客户失败"
+                                    )
+                                    def delete_customer_operation():
+                                        result = safe_delete_customer(customer['id'])
+                                        if result:
+                                            # 清理状态
+                                            st.session_state[delete_key] = False
+                                            if confirm_key in st.session_state:
+                                                del st.session_state[confirm_key]
+                                        return result
+                                    
+                                    if not delete_customer_operation():
                                         st.session_state[delete_key] = False
                             with col2:
                                 if st.button("❌ 取消", key=f"cancel_{customer['id']}"):
@@ -996,12 +1017,16 @@ elif selected == "👥 客户管理":
             
             if submitted:
                 if nickname:
-                    try:
-                        customer_id = db.add_customer(nickname, phone_suffix, notes)
-                        show_success_message(f'客户 "{nickname}" 添加成功！客户ID: {customer_id}')
-                        st.rerun()
-                    except Exception as e:
-                        show_error_message(f"添加客户失败: {str(e)}")
+                    @crud_operation(
+                        operation_type="create",
+                        module="customers",
+                        success_message=f'客户 "{nickname}" 添加成功！',
+                        error_message="添加客户失败"
+                    )
+                    def add_customer_operation():
+                        return db.add_customer(nickname, phone_suffix, notes)
+                    
+                    add_customer_operation()
                 else:
                     show_error_message("请输入客户昵称")
 
@@ -1091,16 +1116,18 @@ elif selected == "🧵 面料管理":
                 
                 def on_fabric_delete(fabric_data):
                     """删除面料的回调函数"""
-                    try:
+                    @crud_operation(
+                        operation_type="delete",
+                        module="fabrics",
+                        success_message="面料删除成功！",
+                        error_message="删除失败"
+                    )
+                    def delete_fabric_operation():
                         # 使用缓存的数据库连接
                         db = init_database()
-                        db.delete_fabric(fabric_data['id'], force_delete=True)
-                        # 删除成功后清理缓存
-                        clear_data_cache()
-                        st.success("面料删除成功！")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"删除失败: {str(e)}")
+                        return db.delete_fabric(fabric_data['id'], force_delete=True)
+                    
+                    delete_fabric_operation()
                 
                 create_card_grid(fabric_list, card_type="fabric", columns=3, 
                                on_edit=on_fabric_edit, on_view=on_fabric_view, on_delete=on_fabric_delete)
@@ -1138,17 +1165,20 @@ elif selected == "🧵 面料管理":
             
             if submitted:
                 if name:
-                    try:
+                    @crud_operation(
+                        operation_type="create",
+                        module="fabrics",
+                        success_message=f'面料 "{name}" 添加成功！',
+                        error_message="添加面料失败"
+                    )
+                    def add_fabric_operation():
                         # 使用已经处理好的图片路径
                         final_image_path = image_path if image_path else ""
-                        
-                        fabric_id = db.add_fabric(name, material_type, usage_type, final_image_path)
-                        st.markdown(f'<div class="success-message">✅ 面料 "{name}" 添加成功！面料ID: {fabric_id}</div>', unsafe_allow_html=True)
-                        st.rerun()
-                    except Exception as e:
-                        st.markdown(f'<div class="error-message">❌ 添加面料失败: {str(e)}</div>', unsafe_allow_html=True)
+                        return db.add_fabric(name, material_type, usage_type, final_image_path)
+                    
+                    add_fabric_operation()
                 else:
-                    st.markdown('<div class="error-message">❌ 请输入面料名称</div>', unsafe_allow_html=True)
+                    show_error_message("请输入面料名称")
 
 # 库存管理页面
 elif selected == "📦 库存管理":
@@ -1265,19 +1295,19 @@ elif selected == "📦 库存管理":
                 
                 def on_inventory_delete(inventory_data):
                     """删除库存商品的回调函数"""
-                    try:
+                    @crud_operation(
+                        operation_type="delete",
+                        module="inventory",
+                        success_message=f"商品 '{inventory_data['name']}' 删除成功！",
+                        error_message="删除失败"
+                    )
+                    def delete_inventory_operation():
                         # 使用缓存的数据库连接
                         db = init_database()
                         # 使用强制删除，允许删除有关联订单的商品
-                        if db.delete_inventory_item(inventory_data['id'], force_delete=True):
-                            # 删除成功后清理缓存
-                            clear_data_cache()
-                            st.success(f"商品 '{inventory_data['name']}' 删除成功！")
-                            st.rerun()
-                        else:
-                            st.error("删除失败！商品不存在或数据库错误。")
-                    except Exception as e:
-                        st.error(f"删除失败: {str(e)}")
+                        return db.delete_inventory_item(inventory_data['id'], force_delete=True)
+                    
+                    delete_inventory_operation()
                 
                 create_card_grid(filtered_items, card_type="inventory", columns=3,
                                on_edit=on_inventory_edit, on_view=on_inventory_view, on_delete=on_inventory_delete)
@@ -1317,14 +1347,20 @@ elif selected == "📦 库存管理":
             
             if submitted:
                 if product_name:
-                    # 使用已经处理好的图片路径
-                    final_image_path = image_path if image_path else ""
+                    @crud_operation(
+                        operation_type="create",
+                        module="inventory",
+                        success_message=f'商品 "{product_name}" 添加成功！',
+                        error_message="添加商品失败"
+                    )
+                    def add_inventory_operation():
+                        # 使用已经处理好的图片路径
+                        final_image_path = image_path if image_path else ""
+                        return db.add_inventory_item(product_name, description, price, quantity, final_image_path)
                     
-                    item_id = db.add_inventory_item(product_name, description, price, quantity, final_image_path)
-                    st.markdown(f'<div class="success-message">✅ 商品 "{product_name}" 添加成功！</div>', unsafe_allow_html=True)
-                    st.rerun()
+                    add_inventory_operation()
                 else:
-                    st.markdown('<div class="error-message">❌ 请输入商品名称</div>', unsafe_allow_html=True)
+                    show_error_message("请输入商品名称")
 
 # 订单管理页面
 elif selected == "📋 订单管理":
@@ -1646,16 +1682,18 @@ elif selected == "📋 订单管理":
                             with btn_col4:
                                 if order['status'] != 'completed':
                                     if st.button("🗑️", key=f"delete_{order['id']}", help="删除", type="secondary"):
-                                        # 使用缓存的数据库连接
-                                        db = init_database()
-                                        success = db.delete_order(order['id'])
-                                        if success:
-                                            # 删除成功后清理缓存
-                                            clear_data_cache()
-                                            st.success("✅ 订单已删除")
-                                            st.rerun()
-                                        else:
-                                            st.error("❌ 删除失败")
+                                        @crud_operation(
+                                            operation_type="delete",
+                                            module="orders",
+                                            success_message="订单已删除",
+                                            error_message="删除失败"
+                                        )
+                                        def delete_order_operation():
+                                            # 使用缓存的数据库连接
+                                            db = init_database()
+                                            return db.delete_order(order['id'])
+                                        
+                                        delete_order_operation()
                         
                         # 详细信息展开
                         if st.session_state.get(f"show_details_{order['id']}", False):
@@ -1796,20 +1834,26 @@ elif selected == "📋 订单管理":
                                 
                                 with col_save:
                                     if st.form_submit_button("💾 保存修改", use_container_width=True):
-                                        selected_customer = customers[selected_customer_index]
-                                        success = db.update_order(order['id'], selected_customer['id'], 
-                                                                new_notes, new_image_path, new_status)
-                                        if success:
-                                            st.success("✅ 订单信息已更新")
-                                            st.session_state[f"edit_order_{order['id']}"] = False
-                                            # 清理缓存
-                                            if 'order_cache_key' in st.session_state:
-                                                del st.session_state.order_cache_key
-                                            if 'order_cache_data' in st.session_state:
-                                                del st.session_state.order_cache_data
-                                            st.rerun()
-                                        else:
-                                            st.error("❌ 更新失败")
+                                        @crud_operation(
+                                            operation_type="update",
+                                            module="orders",
+                                            success_message="订单信息已更新",
+                                            error_message="更新失败"
+                                        )
+                                        def update_order_operation():
+                                            selected_customer = customers[selected_customer_index]
+                                            success = db.update_order(order['id'], selected_customer['id'], 
+                                                                    new_notes, new_image_path, new_status)
+                                            if success:
+                                                st.session_state[f"edit_order_{order['id']}"] = False
+                                                # 清理缓存
+                                                if 'order_cache_key' in st.session_state:
+                                                    del st.session_state.order_cache_key
+                                                if 'order_cache_data' in st.session_state:
+                                                    del st.session_state.order_cache_data
+                                            return success
+                                        
+                                        update_order_operation()
                                 
                                 with col_cancel:
                                     if st.form_submit_button("❌ 取消", use_container_width=True):

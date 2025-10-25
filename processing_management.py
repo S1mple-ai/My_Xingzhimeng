@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from database import DatabaseManager
 import logging
+from utils.state_manager import crud_operation
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,13 @@ def show_processor_management(db):
                 if not nickname.strip():
                     st.error("昵称不能为空！")
                 else:
-                    try:
+                    @crud_operation(
+                        operation_type="create",
+                        module="processors",
+                        success_message=f"成功添加代加工人员：{nickname}",
+                        error_message="添加失败"
+                    )
+                    def add_processor_operation():
                         processor_id = db.add_processor(
                             nickname=nickname.strip(),
                             phone=phone.strip() if phone.strip() else None,
@@ -68,10 +75,9 @@ def show_processor_management(db):
                             douyin=douyin.strip() if douyin.strip() else None,
                             notes=notes.strip() if notes.strip() else None
                         )
-                        st.success(f"成功添加代加工人员：{nickname}")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"添加失败：{str(e)}")
+                        return processor_id is not None
+                    
+                    add_processor_operation()
     
     # 显示代加工人员列表
     st.subheader("📋 代加工人员列表")
@@ -119,14 +125,16 @@ def show_processor_management(db):
                         st.rerun()
                     
                     if st.button("删除", key=f"delete_processor_{processor['id']}", type="secondary"):
-                        try:
-                            db.delete_processor(processor['id'], force_delete=True)
-                            # 删除成功后清理缓存
-                            clear_processing_cache()
-                            st.success(f"成功删除代加工人员：{processor['nickname']}")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"删除失败：{str(e)}")
+                        @crud_operation(
+                            operation_type="delete",
+                            module="processors",
+                            success_message=f"成功删除代加工人员：{processor['nickname']}",
+                            error_message="删除失败"
+                        )
+                        def delete_processor_operation():
+                            return db.delete_processor(processor['id'], force_delete=True)
+                        
+                        delete_processor_operation()
                 
                 # 编辑表单
                 if st.session_state.get(edit_key, False):
@@ -152,8 +160,14 @@ def show_processor_management(db):
                                 if not edit_nickname.strip():
                                     st.error("昵称不能为空！")
                                 else:
-                                    try:
-                                        db.update_processor(
+                                    @crud_operation(
+                                        operation_type="update",
+                                        module="processors",
+                                        success_message=f"成功更新代加工人员：{edit_nickname}",
+                                        error_message="更新失败"
+                                    )
+                                    def update_processor_operation():
+                                        success = db.update_processor(
                                             processor['id'],
                                             nickname=edit_nickname.strip(),
                                             phone=edit_phone.strip() if edit_phone.strip() else None,
@@ -162,11 +176,11 @@ def show_processor_management(db):
                                             douyin=edit_douyin.strip() if edit_douyin.strip() else None,
                                             notes=edit_notes.strip() if edit_notes.strip() else None
                                         )
-                                        st.success(f"成功更新代加工人员：{edit_nickname}")
-                                        del st.session_state[edit_key]
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"更新失败：{str(e)}")
+                                        if success:
+                                            del st.session_state[edit_key]
+                                        return success
+                                    
+                                    update_processor_operation()
                         
                         with edit_col_btn2:
                             if st.form_submit_button("取消"):
