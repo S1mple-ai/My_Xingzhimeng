@@ -1703,6 +1703,11 @@ class DatabaseManager:
         success = cursor.rowcount > 0
         conn.commit()
         conn.close()
+        
+        # 清理库存相关缓存
+        if success:
+            self.clear_cache("inventory")
+        
         return success
     
     def get_inventory_item_by_id(self, item_id: int) -> Optional[Dict]:

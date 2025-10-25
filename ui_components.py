@@ -849,7 +849,7 @@ def _show_delete_modal(item_data, card_type, key_prefix, on_delete):
                     on_delete(item_data)
                 # 清除删除确认状态
                 st.session_state[f"show_delete_modal_{key_prefix}_{item_data.get('id')}"] = False
-                st.rerun()
+                # 注意：不需要手动调用st.rerun()，crud_operation装饰器会自动处理
         with col2:
             if st.button("❌ 取消", key=f"{modal_key}_cancel"):
                 # 清除删除确认状态
