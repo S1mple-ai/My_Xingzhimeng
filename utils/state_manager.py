@@ -243,15 +243,41 @@ def safe_operation(success_message: str = None, error_message: str = None):
     return decorator
 
 
+# 模块到缓存类型的映射
+MODULE_CACHE_MAPPING = {
+    "customers": ["customers"],
+    "fabrics": ["fabrics"],
+    "orders": ["orders"],
+    "inventory": ["inventory"],
+    "processors": ["processors"],
+}
+
 # 组合装饰器：完整的CRUD操作装饰器
-def crud_operation(data_types: List[str], 
+def crud_operation(operation_type: str = None,
+                  module: str = None, 
+                  data_types: List[str] = None,
                   success_message: str = "操作成功", 
                   error_message: str = "操作失败",
                   loading_message: str = "正在处理..."):
     """
     完整的CRUD操作装饰器
     结合了自动刷新、安全操作和加载状态
+    
+    Args:
+        operation_type: 操作类型 (create, update, delete)
+        module: 模块名称 (customers, fabrics, orders, inventory, processors)
+        data_types: 直接指定需要刷新的数据类型列表
+        success_message: 成功消息
+        error_message: 错误消息
+        loading_message: 加载消息
     """
+    # 确定需要刷新的数据类型
+    if data_types is None:
+        if module and module in MODULE_CACHE_MAPPING:
+            data_types = MODULE_CACHE_MAPPING[module]
+        else:
+            data_types = []
+    
     def decorator(func: Callable) -> Callable:
         @with_loading(loading_message)
         @safe_operation(success_message, error_message)
