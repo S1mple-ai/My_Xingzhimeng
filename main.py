@@ -1298,7 +1298,7 @@ elif selected == "📦 库存管理":
                     @crud_operation(
                         operation_type="delete",
                         module="inventory",
-                        success_message=f"商品 '{inventory_data['name']}' 删除成功！",
+                        success_message=f"商品 '{inventory_data.get('product_name', '未知商品')}' 删除成功！",
                         error_message="删除失败"
                     )
                     def delete_inventory_operation():
